@@ -18,21 +18,24 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <AuthGuard>
       <PushRegistration />
-      <div className="min-h-screen bg-gray-50">
-        <header className="sticky top-0 z-10 border-b bg-white px-4 py-3">
+      <div className="min-h-screen bg-stone-50">
+        <header className="sticky top-0 z-10 border-b border-stone-200 bg-white/80 backdrop-blur-md px-4 py-3">
           <div className="mx-auto flex max-w-2xl items-center justify-between">
-            <Link href="/dashboard" className="text-xl font-bold text-gray-900">
-              Splitify
+            <Link href="/dashboard" className="flex items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-700 text-sm font-bold text-white">
+                S
+              </div>
+              <span className="text-lg font-bold text-stone-900">Splitify</span>
             </Link>
             <button
               onClick={handleLogout}
-              className="text-sm text-gray-500 hover:text-gray-700"
+              className="rounded-lg px-3 py-1.5 text-sm text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-700"
             >
               Logout
             </button>
           </div>
         </header>
-        <main className="mx-auto max-w-2xl px-4 py-6">{children}</main>
+        <main className="mx-auto max-w-2xl px-4 py-6 animate-page">{children}</main>
       </div>
     </AuthGuard>
   );

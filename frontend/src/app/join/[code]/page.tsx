@@ -19,16 +19,21 @@ export default function JoinGroupPage() {
 
   return (
     <AuthGuard>
-      <div className="flex min-h-screen items-center justify-center">
+      <div className="flex min-h-screen items-center justify-center animate-page">
         {error ? (
           <div className="text-center">
-            <p className="text-red-500">{error}</p>
-            <a href="/dashboard" className="mt-4 text-indigo-600 hover:text-indigo-800">
+            <p className="text-rose-500">{error}</p>
+            <a href="/dashboard" className="mt-4 inline-block text-emerald-700 hover:text-emerald-900">
               Go to Dashboard
             </a>
           </div>
         ) : (
-          <p className="text-gray-500">Joining group...</p>
+          <div className="flex flex-col items-center gap-3">
+            <div className="flex h-12 w-12 animate-pulse items-center justify-center rounded-2xl bg-emerald-700 text-lg font-bold text-white">
+              S
+            </div>
+            <p className="text-stone-500">Joining group...</p>
+          </div>
         )}
       </div>
     </AuthGuard>

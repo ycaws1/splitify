@@ -25,7 +25,14 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     return () => subscription.unsubscribe();
   }, [router, supabase.auth]);
 
-  if (loading) return <div className="flex h-screen items-center justify-center text-gray-500">Loading...</div>;
+  if (loading) return (
+    <div className="flex h-screen flex-col items-center justify-center gap-3 bg-stone-50">
+      <div className="flex h-12 w-12 animate-pulse items-center justify-center rounded-2xl bg-emerald-700 text-lg font-bold text-white">
+        S
+      </div>
+      <p className="text-sm text-stone-400">Loading...</p>
+    </div>
+  );
   if (!user) return null;
 
   return <>{children}</>;

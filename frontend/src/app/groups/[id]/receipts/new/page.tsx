@@ -51,31 +51,31 @@ export default function UploadReceiptPage() {
 
   return (
     <AuthGuard>
-      <div className="mx-auto max-w-2xl px-4 py-6">
-        <h1 className="mb-6 text-2xl font-bold text-gray-900">Upload Receipt</h1>
+      <div className="mx-auto max-w-2xl px-4 py-6 animate-page">
+        <h1 className="mb-6 text-2xl font-bold text-stone-900">Upload Receipt</h1>
 
         {error && (
-          <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-600">{error}</div>
+          <div className="mb-4 rounded-xl bg-rose-50 p-3 text-sm text-rose-600">{error}</div>
         )}
 
         {preview ? (
           <div className="space-y-4">
-            <img src={preview} alt="Receipt preview" className="w-full rounded-lg border" />
+            <img src={preview} alt="Receipt preview" className="w-full rounded-xl border border-stone-200" />
             {uploading && (
               <div className="text-center">
-                <div className="inline-block h-6 w-6 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent" />
-                <p className="mt-2 text-sm text-gray-500">Uploading and processing...</p>
+                <div className="inline-block h-6 w-6 animate-spin rounded-full border-2 border-emerald-600 border-t-transparent" />
+                <p className="mt-2 text-sm text-stone-500">Uploading and processing...</p>
               </div>
             )}
           </div>
         ) : (
           <div
             onClick={() => fileInputRef.current?.click()}
-            className="cursor-pointer rounded-lg border-2 border-dashed border-gray-300 p-12 text-center hover:border-indigo-400 transition-colors"
+            className="cursor-pointer rounded-2xl border-2 border-dashed border-stone-300 p-12 text-center hover:border-emerald-400 transition-colors"
           >
-            <div className="text-4xl text-gray-400 mb-2">&#128247;</div>
-            <p className="text-gray-500">Tap to take a photo or select an image</p>
-            <p className="mt-1 text-sm text-gray-400">Supports JPG, PNG, HEIC</p>
+            <div className="text-4xl text-stone-400 mb-2">&#128247;</div>
+            <p className="text-stone-500">Tap to take a photo or select an image</p>
+            <p className="mt-1 text-sm text-stone-400">Supports JPG, PNG, HEIC</p>
           </div>
         )}
 

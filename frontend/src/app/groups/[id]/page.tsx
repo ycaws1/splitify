@@ -29,8 +29,8 @@ export default function GroupDetailPage() {
       .finally(() => setLoading(false));
   }, [groupId]);
 
-  if (loading) return <AuthGuard><p className="p-6 text-gray-500">Loading...</p></AuthGuard>;
-  if (!group) return <AuthGuard><p className="p-6 text-red-500">Group not found</p></AuthGuard>;
+  if (loading) return <AuthGuard><p className="p-6 text-stone-500">Loading...</p></AuthGuard>;
+  if (!group) return <AuthGuard><p className="p-6 text-rose-500">Group not found</p></AuthGuard>;
 
   const inviteUrl = typeof window !== "undefined"
     ? `${window.location.origin}/join/${group.invite_code}`
@@ -38,12 +38,12 @@ export default function GroupDetailPage() {
 
   return (
     <AuthGuard>
-      <div className="mx-auto max-w-2xl px-4 py-6 space-y-6">
+      <div className="mx-auto max-w-2xl px-4 py-6 space-y-6 animate-page">
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-gray-900">{group.name}</h1>
+          <h1 className="text-2xl font-bold text-stone-900">{group.name}</h1>
           <Link
             href={`/groups/${groupId}/receipts`}
-            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+            className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-800"
           >
             Receipts
           </Link>
@@ -51,12 +51,12 @@ export default function GroupDetailPage() {
 
         {/* Members */}
         <section>
-          <h2 className="mb-3 text-lg font-semibold text-gray-900">Members ({group.members.length})</h2>
+          <h2 className="mb-3 text-lg font-semibold text-stone-900">Members ({group.members.length})</h2>
           <div className="space-y-2">
             {group.members.map((m) => (
-              <div key={m.user_id} className="flex items-center justify-between rounded-lg border bg-white px-4 py-3">
-                <span className="text-gray-900">{m.display_name || "Unknown"}</span>
-                <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">{m.role}</span>
+              <div key={m.user_id} className="flex items-center justify-between rounded-xl border-l-4 border-l-emerald-600 bg-white px-4 py-3 shadow-sm">
+                <span className="text-stone-900">{m.display_name || "Unknown"}</span>
+                <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700">{m.role}</span>
               </div>
             ))}
           </div>
@@ -66,20 +66,20 @@ export default function GroupDetailPage() {
         <section>
           <button
             onClick={() => setShowInvite(!showInvite)}
-            className="w-full rounded-lg border border-indigo-600 px-4 py-2 text-sm font-medium text-indigo-600 hover:bg-indigo-50"
+            className="w-full rounded-xl border-2 border-emerald-700 px-4 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-50"
           >
             {showInvite ? "Hide Invite" : "Invite Members"}
           </button>
           {showInvite && (
-            <div className="mt-4 rounded-lg border bg-white p-4 text-center space-y-3">
-              <p className="text-sm text-gray-500">Share this code or scan the QR:</p>
-              <p className="text-2xl font-mono font-bold tracking-wider text-gray-900">{group.invite_code}</p>
+            <div className="mt-4 rounded-xl border border-stone-200 bg-white p-4 text-center space-y-3 shadow-sm">
+              <p className="text-sm text-stone-500">Share this code or scan the QR:</p>
+              <p className="text-2xl font-mono font-bold tracking-wider text-stone-900">{group.invite_code}</p>
               <div className="flex justify-center">
                 <QRCodeSVG value={inviteUrl} size={160} />
               </div>
               <button
                 onClick={() => navigator.clipboard.writeText(inviteUrl)}
-                className="text-sm text-indigo-600 hover:text-indigo-800"
+                className="text-sm text-emerald-700 hover:text-emerald-900"
               >
                 Copy invite link
               </button>
@@ -90,22 +90,22 @@ export default function GroupDetailPage() {
         {/* Balances */}
         <section>
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-semibold text-gray-900">Balances</h2>
-            <Link href={`/groups/${groupId}/stats`} className="text-sm text-indigo-600 hover:text-indigo-800">
+            <h2 className="text-lg font-semibold text-stone-900">Balances</h2>
+            <Link href={`/groups/${groupId}/stats`} className="text-sm text-emerald-700 hover:text-emerald-900">
               View Stats
             </Link>
           </div>
           {balances.length === 0 ? (
-            <p className="text-gray-500 text-sm">All settled up!</p>
+            <p className="text-stone-500 text-sm">All settled up!</p>
           ) : (
             <div className="space-y-2">
               {balances.map((b, i) => (
-                <div key={i} className="flex items-center justify-between rounded-lg border bg-white px-4 py-3">
-                  <span className="text-sm text-gray-700">
+                <div key={i} className="flex items-center justify-between rounded-xl border-l-4 border-l-emerald-600 bg-white px-4 py-3 shadow-sm">
+                  <span className="text-sm text-stone-700">
                     <span className="font-medium">{b.from_user_name}</span> owes{" "}
                     <span className="font-medium">{b.to_user_name}</span>
                   </span>
-                  <span className="font-semibold text-red-600">${b.amount}</span>
+                  <span className="font-semibold font-mono text-rose-600">${b.amount}</span>
                 </div>
               ))}
             </div>

@@ -14,7 +14,6 @@ export default function LoginPage() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
         if (session) {
-          // Sync user to backend
           fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/auth/callback`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -33,16 +32,38 @@ export default function LoginPage() {
   }, [router, supabase.auth]);
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50">
-      <div className="w-full max-w-md rounded-xl bg-white p-8 shadow-lg">
-        <h1 className="mb-2 text-center text-3xl font-bold text-gray-900">Splitify</h1>
-        <p className="mb-6 text-center text-sm text-gray-500">Split bills with friends, effortlessly</p>
-        <Auth
-          supabaseClient={supabase}
-          appearance={{ theme: ThemeSupa }}
-          providers={[]}
-          redirectTo={typeof window !== "undefined" ? `${window.location.origin}/dashboard` : ""}
-        />
+    <div className="flex min-h-screen items-center justify-center bg-stone-50 px-4">
+      <div className="animate-page w-full max-w-sm">
+        <div className="mb-8 text-center">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-700 text-2xl text-white shadow-lg">
+            S
+          </div>
+          <h1 className="text-3xl font-bold tracking-tight text-stone-900">Splitify</h1>
+          <p className="mt-1 text-stone-500">Split bills with friends, effortlessly</p>
+        </div>
+        <div className="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm">
+          <Auth
+            supabaseClient={supabase}
+            appearance={{
+              theme: ThemeSupa,
+              variables: {
+                default: {
+                  colors: {
+                    brand: '#047857',
+                    brandAccent: '#065f46',
+                    inputBorder: '#d6d3d1',
+                    inputBorderFocus: '#047857',
+                    inputBorderHover: '#a8a29e',
+                  },
+                  borderWidths: { buttonBorderWidth: '0px', inputBorderWidth: '1px' },
+                  radii: { borderRadiusButton: '12px', inputBorderRadius: '12px' },
+                },
+              },
+            }}
+            providers={[]}
+            redirectTo={typeof window !== "undefined" ? `${window.location.origin}/dashboard` : ""}
+          />
+        </div>
       </div>
     </div>
   );

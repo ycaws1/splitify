@@ -19,20 +19,28 @@ export default function DashboardPage() {
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">My Groups</h1>
+        <h1 className="text-2xl font-bold text-stone-900">My Groups</h1>
         <Link
           href="/groups/new"
-          className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+          className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-800"
         >
-          New Group
+          + New Group
         </Link>
       </div>
 
       {loading ? (
-        <p className="text-gray-500">Loading groups...</p>
+        <div className="space-y-3">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="h-20 animate-pulse rounded-xl bg-stone-200" />
+          ))}
+        </div>
       ) : groups.length === 0 ? (
-        <div className="rounded-lg border-2 border-dashed border-gray-200 p-12 text-center">
-          <p className="text-gray-500">No groups yet. Create one to get started!</p>
+        <div className="rounded-2xl border-2 border-dashed border-stone-300 p-16 text-center">
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-stone-100 text-xl">
+            +
+          </div>
+          <p className="font-medium text-stone-700">No groups yet</p>
+          <p className="mt-1 text-sm text-stone-500">Create one to start splitting bills</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -40,10 +48,10 @@ export default function DashboardPage() {
             <Link
               key={group.id}
               href={`/groups/${group.id}`}
-              className="block rounded-lg border bg-white p-4 shadow-sm hover:shadow-md transition-shadow"
+              className="block rounded-xl border-l-4 border-l-emerald-600 bg-white p-4 shadow-sm transition-all hover:shadow-md hover:-translate-y-0.5"
             >
-              <h2 className="font-semibold text-gray-900">{group.name}</h2>
-              <p className="mt-1 text-sm text-gray-500">
+              <h2 className="font-semibold text-stone-900">{group.name}</h2>
+              <p className="mt-1 text-sm text-stone-500">
                 Created {new Date(group.created_at).toLocaleDateString()}
               </p>
             </Link>

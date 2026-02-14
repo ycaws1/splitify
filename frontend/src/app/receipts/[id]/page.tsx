@@ -131,53 +131,58 @@ export default function ReceiptDetailPage() {
   if (loading)
     return (
       <AuthGuard>
-        <p className="p-6 text-gray-500">Loading...</p>
+        <div className="flex h-screen flex-col items-center justify-center gap-3 bg-stone-50">
+          <div className="flex h-12 w-12 animate-pulse items-center justify-center rounded-2xl bg-emerald-700 text-lg font-bold text-white">
+            S
+          </div>
+          <p className="text-sm text-stone-400">Loading...</p>
+        </div>
       </AuthGuard>
     );
   if (!receipt)
     return (
       <AuthGuard>
-        <p className="p-6 text-red-500">Receipt not found</p>
+        <p className="p-6 text-rose-500">Receipt not found</p>
       </AuthGuard>
     );
 
   return (
     <AuthGuard>
-      <div className="mx-auto max-w-2xl px-4 py-6 space-y-6">
+      <div className="mx-auto max-w-2xl px-4 py-6 space-y-6 animate-page">
         {/* Header */}
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">
+          <h1 className="text-2xl font-bold text-stone-900">
             {receipt.merchant_name || "Processing..."}
           </h1>
           {receipt.receipt_date && (
-            <p className="text-sm text-gray-500">{receipt.receipt_date}</p>
+            <p className="text-sm text-stone-500">{receipt.receipt_date}</p>
           )}
-          <div className="mt-2 flex gap-3 text-sm text-gray-600">
-            {receipt.subtotal && <span>Subtotal: ${receipt.subtotal}</span>}
-            {receipt.tax && <span>Tax: ${receipt.tax}</span>}
-            {receipt.service_charge && <span>Service: ${receipt.service_charge}</span>}
-            {receipt.total && <span className="font-semibold">Total: ${receipt.total}</span>}
+          <div className="mt-2 flex gap-3 text-sm text-stone-600">
+            {receipt.subtotal && <span>Subtotal: <span className="font-mono">${receipt.subtotal}</span></span>}
+            {receipt.tax && <span>Tax: <span className="font-mono">${receipt.tax}</span></span>}
+            {receipt.service_charge && <span>Service: <span className="font-mono">${receipt.service_charge}</span></span>}
+            {receipt.total && <span className="font-semibold">Total: <span className="font-mono">${receipt.total}</span></span>}
           </div>
         </div>
 
         {/* Processing state */}
         {receipt.status === "processing" && (
-          <div className="rounded-lg bg-yellow-50 p-4 text-center">
-            <div className="inline-block h-6 w-6 animate-spin rounded-full border-2 border-yellow-600 border-t-transparent" />
-            <p className="mt-2 text-sm text-yellow-700">AI is extracting receipt details...</p>
+          <div className="rounded-xl bg-amber-50 p-4 text-center">
+            <div className="inline-block h-6 w-6 animate-spin rounded-full border-2 border-amber-600 border-t-transparent" />
+            <p className="mt-2 text-sm text-amber-700">AI is extracting receipt details...</p>
           </div>
         )}
 
         {/* Line Items + Assignments */}
         {receipt.line_items.length > 0 && (
           <section>
-            <h2 className="mb-3 text-lg font-semibold text-gray-900">Line Items</h2>
+            <h2 className="mb-3 text-lg font-semibold text-stone-900">Line Items</h2>
             <div className="space-y-3">
               {receipt.line_items.map((li) => (
-                <div key={li.id} className="rounded-lg border bg-white p-4">
+                <div key={li.id} className="rounded-xl border-l-4 border-l-emerald-600 bg-white p-4 shadow-sm">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="font-medium text-gray-900">{li.description}</span>
-                    <span className="font-semibold text-gray-900">${li.amount}</span>
+                    <span className="font-medium text-stone-900">{li.description}</span>
+                    <span className="font-semibold font-mono text-stone-900">${li.amount}</span>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {members.map((m) => (
@@ -187,8 +192,8 @@ export default function ReceiptDetailPage() {
                         disabled={saving}
                         className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
                           isAssigned(li.id, m.user_id)
-                            ? "bg-indigo-600 text-white"
-                            : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                            ? "bg-emerald-700 text-white"
+                            : "bg-stone-100 text-stone-600 hover:bg-stone-200"
                         }`}
                       >
                         {m.display_name || "Unknown"}
@@ -203,14 +208,14 @@ export default function ReceiptDetailPage() {
 
         {/* Payment */}
         <section>
-          <h2 className="mb-3 text-lg font-semibold text-gray-900">Record Payment</h2>
-          <div className="rounded-lg border bg-white p-4 space-y-3">
+          <h2 className="mb-3 text-lg font-semibold text-stone-900">Record Payment</h2>
+          <div className="rounded-xl border-l-4 border-l-emerald-600 bg-white p-4 space-y-3 shadow-sm">
             <div>
-              <label className="block text-sm font-medium text-gray-700">Who paid?</label>
+              <label className="block text-sm font-medium text-stone-700">Who paid?</label>
               <select
                 value={payUserId}
                 onChange={(e) => setPayUserId(e.target.value)}
-                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2"
+                className="mt-1 block w-full rounded-xl border border-stone-300 px-3 py-2 focus:border-emerald-600 focus:outline-none focus:ring-1 focus:ring-emerald-600"
               >
                 <option value="">Select member</option>
                 {members.map((m) => (
@@ -221,20 +226,20 @@ export default function ReceiptDetailPage() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700">Amount</label>
+              <label className="block text-sm font-medium text-stone-700">Amount</label>
               <input
                 type="number"
                 step="0.01"
                 value={payAmount}
                 onChange={(e) => setPayAmount(e.target.value)}
                 placeholder={receipt.total || "0.00"}
-                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2"
+                className="mt-1 block w-full rounded-xl border border-stone-300 px-3 py-2 font-mono focus:border-emerald-600 focus:outline-none focus:ring-1 focus:ring-emerald-600"
               />
             </div>
             <button
               onClick={handlePayment}
               disabled={!payUserId || !payAmount}
-              className="w-full rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
+              className="w-full rounded-xl bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-800 disabled:opacity-50"
             >
               Record Payment
             </button>
@@ -244,8 +249,8 @@ export default function ReceiptDetailPage() {
         {/* Receipt image */}
         {receipt.image_url && (
           <section>
-            <h2 className="mb-3 text-lg font-semibold text-gray-900">Receipt Image</h2>
-            <img src={receipt.image_url} alt="Receipt" className="w-full rounded-lg border" />
+            <h2 className="mb-3 text-lg font-semibold text-stone-900">Receipt Image</h2>
+            <img src={receipt.image_url} alt="Receipt" className="w-full rounded-xl border border-stone-200" />
           </section>
         )}
       </div>

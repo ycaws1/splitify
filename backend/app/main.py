@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.auth import router as auth_router
 from app.api.groups import router as groups_router
+from app.api.receipts import router as receipts_router
 
 app = FastAPI(title="Splitify API", version="0.1.0")
 
@@ -17,6 +18,7 @@ app.add_middleware(
 
 app.include_router(auth_router)
 app.include_router(groups_router)
+app.include_router(receipts_router)
 
 
 @app.get("/api/health")

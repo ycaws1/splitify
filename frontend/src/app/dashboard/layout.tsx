@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { AuthGuard } from "@/components/auth-guard";
+import { PushRegistration } from "@/components/push-registration";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -16,6 +17,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <AuthGuard>
+      <PushRegistration />
       <div className="min-h-screen bg-gray-50">
         <header className="sticky top-0 z-10 border-b bg-white px-4 py-3">
           <div className="mx-auto flex max-w-2xl items-center justify-between">

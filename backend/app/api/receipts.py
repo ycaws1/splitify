@@ -13,8 +13,7 @@ from app.services.receipt_service import (
     create_receipt, list_receipts, get_receipt, update_receipt,
 )
 
-# TODO (Task 8): Import OCR worker once implemented
-# from app.workers.ocr import process_receipt_ocr
+from app.workers.ocr import process_receipt_ocr
 
 router = APIRouter(tags=["receipts"])
 
@@ -28,8 +27,7 @@ async def upload_receipt(
     db: AsyncSession = Depends(get_db),
 ):
     receipt = await create_receipt(db, group_id, body.image_url, user)
-    # OCR processing will be added in Task 8
-    # background_tasks.add_task(process_receipt_ocr, receipt.id)
+    background_tasks.add_task(process_receipt_ocr, receipt.id)
     return receipt
 
 

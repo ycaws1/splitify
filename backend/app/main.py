@@ -32,9 +32,9 @@ async def lifespan(app):
 
 app = FastAPI(title="Splitify API", version="0.1.0", lifespan=lifespan)
 
-import os
+from app.core.config import settings
 
-cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
+cors_origins = settings.cors_origins.split(",")
 
 app.add_middleware(
     CORSMiddleware,

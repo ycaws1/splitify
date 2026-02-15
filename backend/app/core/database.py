@@ -11,24 +11,13 @@ def _get_async_url(url: str) -> str:
         return url.replace("postgresql://", "postgresql+asyncpg://", 1)
     if url.startswith("postgres://"):
         return url.replace("postgres://", "postgresql+asyncpg://", 1)
-    return url
-
-
 
 _db_url = _get_async_url(settings.database_url)
 
 
+
+
 print(f"DEBUG: database_url={_db_url}")
-
-# Append statement_cache_size=0 to URL query parameters
-# This is required for pgbouncer transaction mode and appears more reliable
-# than connect_args for some SQLAlchemy/asyncpg combinations
-if "?" in _db_url:
-    _db_url += "&statement_cache_size=0"
-else:
-    _db_url += "?statement_cache_size=0"
-
-print(f"DEBUG: database_url_final={_db_url}")
 
 # Force pgbouncer settings to resolve "DuplicatePreparedStatementError"
 # This confirms we are using transaction pooling which requires disabling prepared statements
@@ -39,6 +28,9 @@ engine = create_async_engine(
     _db_url,
     echo=False,
     poolclass=NullPool,
+    connect_args={
+        "statement_cache_size": 0,
+    },
 )
 async_session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 

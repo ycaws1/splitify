@@ -18,13 +18,14 @@ def _receipt_load_options():
 
 
 async def create_receipt(
-    db: AsyncSession, group_id: uuid.UUID, image_url: str, user: User
+    db: AsyncSession, group_id: uuid.UUID, image_url: str, user: User, currency: str | None = None
 ) -> Receipt:
     receipt = Receipt(
         group_id=group_id,
         uploaded_by=user.id,
         image_url=image_url,
         status=ReceiptStatus.processing,
+        currency=currency if currency else "SGD",
     )
     db.add(receipt)
     await db.commit()

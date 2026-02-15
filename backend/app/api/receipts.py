@@ -42,8 +42,8 @@ async def upload_receipt(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    receipt = await create_receipt(db, group_id, body.image_url, user)
-    background_tasks.add_task(process_receipt_ocr, receipt.id)
+    receipt = await create_receipt(db, group_id, body.image_url, user, currency=body.currency)
+    background_tasks.add_task(process_receipt_ocr, receipt.id, body.currency)
     return receipt
 
 

@@ -458,6 +458,16 @@ export default function ReceiptDetailPage() {
         <div className="rounded-xl bg-rose-50 p-4 text-center mb-4">
           <p className="text-sm font-medium text-rose-700">Failed to extract receipt info.</p>
           <p className="text-xs text-rose-600 mt-1">You can add items manually below.</p>
+          {receipt.raw_llm_response?.error && (
+            <details className="mt-2 text-left">
+              <summary className="text-xs text-rose-500 cursor-pointer hover:underline">Show Error Details</summary>
+              <pre className="mt-2 max-h-48 overflow-auto rounded-lg bg-white/50 p-2 text-[10px] text-rose-900 font-mono whitespace-pre-wrap">
+                {receipt.raw_llm_response.error}
+                {'\n\n'}
+                {receipt.raw_llm_response.traceback}
+              </pre>
+            </details>
+          )}
         </div>
       )}
 
@@ -515,14 +525,14 @@ export default function ReceiptDetailPage() {
                             value={li.amount}
                             onChange={(e) => handleUpdateItem(li.id, "amount", e.target.value)}
                             placeholder="Amount"
-                            className="block w-24 rounded-lg border border-stone-300 px-2 py-1 font-mono text-sm focus:border-emerald-600 focus:outline-none"
+                            className="block w-28 rounded-lg border border-stone-300 px-2 py-1 font-mono text-sm focus:border-emerald-600 focus:outline-none"
                           />
                           <input
                             type="number"
                             value={li.quantity}
                             onChange={(e) => handleUpdateItem(li.id, "quantity", e.target.value)}
                             placeholder="Qty"
-                            className="block w-16 rounded-lg border border-stone-300 px-2 py-1 font-mono text-sm text-center focus:border-emerald-600 focus:outline-none"
+                            className="block w-24 rounded-lg border border-stone-300 px-2 py-1 font-mono text-sm text-center focus:border-emerald-600 focus:outline-none"
                             title="Quantity"
                           />
                         </div>

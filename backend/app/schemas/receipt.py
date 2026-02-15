@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict
 
 class ReceiptCreate(BaseModel):
     image_url: str
+    currency: str | None = None
 
 
 class LineItemCreate(BaseModel):
@@ -26,7 +27,7 @@ class LineItemUpdate(BaseModel):
 
 class ManualReceiptCreate(BaseModel):
     merchant_name: str
-    currency: str = "MYR"
+    currency: str = "SGD"
     exchange_rate: Decimal = Decimal("1")
     receipt_date: date | None = None
     tax: Decimal | None = None
@@ -70,6 +71,7 @@ class ReceiptResponse(BaseModel):
     status: str
     version: int
     created_at: datetime
+    raw_llm_response: dict | None = None
     line_items: list[LineItemResponse] = []
 
 

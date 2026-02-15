@@ -32,6 +32,7 @@ export interface Receipt {
   version: number;
   created_at: string;
   line_items: LineItem[];
+  raw_llm_response: Record<string, any> | null;
 }
 
 export interface LineItem {

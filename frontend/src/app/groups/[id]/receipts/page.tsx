@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { apiFetch } from "@/lib/api";
+import { createClient } from "@/lib/supabase/client";
 import { getCurrencySymbol } from "@/lib/currency";
 import type { Group } from "@/types";
 
@@ -29,26 +30,63 @@ export default function ReceiptListPage() {
     apiFetch(`/api/groups/${groupId}`).then(setGroup).catch(console.error);
   }, [groupId]);
 
+  const isMounted = useRef(true);
+
   useEffect(() => {
-    let stale = false;
-    const load = () => {
-      apiFetch(`/api/groups/${groupId}/receipts`)
-        .then((data) => { if (!stale) setReceipts(data); })
-        .catch(console.error)
-        .finally(() => { if (!stale) setLoading(false); });
-    };
-    load();
-    // Refetch when user returns to this tab/page
-    const onVisible = () => { if (document.visibilityState === "visible") load(); };
-    const onFocus = () => load();
-    document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("focus", onFocus);
-    return () => {
-      stale = true;
-      document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("focus", onFocus);
-    };
+    isMounted.current = true;
+    return () => { isMounted.current = false; };
+  }, []);
+
+  const fetchReceipts = useCallback(async (showLoading = false) => {
+    try {
+      if (showLoading && isMounted.current) setLoading(true);
+      const data = await apiFetch(`/api/groups/${groupId}/receipts`);
+      if (isMounted.current) {
+        setReceipts(data);
+        if (showLoading) setLoading(false);
+      }
+    } catch (err) {
+      console.error(err);
+      if (showLoading && isMounted.current) setLoading(false);
+    }
   }, [groupId]);
+
+  // Initial load & Realtime
+  useEffect(() => {
+    fetchReceipts(true);
+
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`group-receipts-${groupId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "receipts", filter: `group_id=eq.${groupId}` },
+        (payload: any) => {
+          console.log("Realtime update received:", payload);
+          fetchReceipts(false);
+        }
+      )
+      .subscribe((status: string) => {
+        console.log("Realtime subscription status:", status);
+      });
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [groupId, fetchReceipts]);
+
+  // Polling fallback
+  useEffect(() => {
+    const hasProcessing = receipts.some(r => r.status === "processing");
+    if (!hasProcessing) return;
+
+    const interval = setInterval(() => {
+      console.log("Polling for updates...");
+      fetchReceipts(false);
+    }, 4000);
+
+    return () => clearInterval(interval);
+  }, [receipts, fetchReceipts]);
 
   const handleDelete = async (e: React.MouseEvent, receiptId: string) => {
     e.preventDefault(); // Prevent navigation

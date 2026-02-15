@@ -69,8 +69,9 @@ async def fetch_exchange_rate(from_currency: str, to_currency: str) -> float:
     return 1.0  # Fallback
 
 
-async def process_receipt_ocr(receipt_id: uuid.UUID) -> None:
+async def process_receipt_ocr(receipt_id: uuid.UUID, user_provided_currency: str | None = None) -> None:
     async with async_session_factory() as db:
+        receipt = None
         try:
             # Fetch receipt
             result = await db.execute(select(Receipt).where(Receipt.id == receipt_id))
@@ -81,12 +82,17 @@ async def process_receipt_ocr(receipt_id: uuid.UUID) -> None:
                 return
 
             # Download and encode image
-            logger.info(f"Downloading image from: {receipt.image_url}")
+            import time
+            start_time = time.time()
+            print(f"DEBUG: Downloading image from: {receipt.image_url}")
             
             async with httpx.AsyncClient(timeout=60.0) as client:
                 response = await client.get(receipt.image_url)
                 response.raise_for_status()
                 image_data = response.content
+            
+            download_time = time.time() - start_time
+            print(f"DEBUG: Image downloaded in {download_time:.2f}s. Size: {len(image_data)} bytes")
                 
             mime_type = "image/jpeg"
             if receipt.image_url.lower().endswith(".png"):
@@ -103,16 +109,20 @@ async def process_receipt_ocr(receipt_id: uuid.UUID) -> None:
 
             # Configure Gemini
             genai.configure(api_key=settings.google_api_key)
-            model = genai.GenerativeModel('gemini-3-flash-preview')
+            model_name = 'gemini-3-flash-preview' 
+            model = genai.GenerativeModel(model_name)
             
+            ocr_start = time.time()
+            print(f"DEBUG: Starting OCR with model {model_name}...")
             response = await model.generate_content_async([
                 image_parts[0],
                 EXTRACTION_PROMPT
             ])
+            ocr_duration = time.time() - ocr_start
             
             raw_text = response.text
             
-            logger.info(f"Received OCR response for receipt {receipt_id}")
+            print(f"DEBUG: Received OCR response for receipt {receipt_id} in {ocr_duration:.2f}s. Total time: {time.time() - start_time:.2f}s")
             
             # Remove markdown code blocks if present
             if "```json" in raw_text:
@@ -140,7 +150,10 @@ async def process_receipt_ocr(receipt_id: uuid.UUID) -> None:
             else:
                 receipt.receipt_date = None
 
-            receipt.currency = data.get("currency", "MYR")
+            if user_provided_currency:
+                receipt.currency = user_provided_currency
+            else:
+                receipt.currency = data.get("currency", "SGD")
             receipt.subtotal = data.get("subtotal")
             
             # Move Tax and Service Charge to line items for easier splitting
@@ -191,10 +204,10 @@ async def process_receipt_ocr(receipt_id: uuid.UUID) -> None:
             for i, item in enumerate(data.get("line_items", [])):
                 line_item = LineItem(
                     receipt_id=receipt.id,
-                    description=item["description"],
-                    quantity=item.get("quantity", 1),
-                    unit_price=item["unit_price"],
-                    amount=item["amount"],
+                    description=item.get("description", "Unknown Item"),
+                    quantity=_get_val(item.get("quantity", 1)),
+                    unit_price=_get_val(item.get("unit_price")),
+                    amount=_get_val(item.get("amount")),
                     sort_order=i,
                 )
                 db.add(line_item)
@@ -203,6 +216,36 @@ async def process_receipt_ocr(receipt_id: uuid.UUID) -> None:
             logger.info(f"Successfully processed receipt {receipt_id}")
 
         except Exception as e:
-            logger.error(f"OCR processing failed for receipt {receipt_id}: {e}", exc_info=True)
-            receipt.status = ReceiptStatus.failed
-            await db.commit()
+            import traceback
+            print(f"DEBUG: OCR processing CRITICAL FAILURE for receipt {receipt_id}")
+            traceback.print_exc()
+            try:
+                # Rollback the failed transaction so we can use the session again
+                await db.rollback()
+                
+                if receipt:
+                    # Refetch receipt to ensure it's attached to the new transaction state
+                    # (Wait, receipt object is still valid but detached or state is confusing? 
+                    # Actually, better to just update it. But strictly, we should maybe re-query if needed.
+                    # However, since we just rolled back logic that modified it (but failed), 
+                    # we can just set the status fields and commit.)
+                    
+                    # NOTE: We need to make sure we don't re-add invalid line items.
+                    # Since we rolled back, line items are gone from DB. 
+                    # Receipt modifications (merchant_name etc) are also gone from DB.
+                    # So we update status on the CLEAN receipt row.
+                    
+                    receipt.status = ReceiptStatus.failed
+                    receipt.raw_llm_response = {
+                        "error": str(e),
+                        "traceback": traceback.format_exc(),
+                        "stage": "processing"
+                    }
+                    # We might need to merge/add receipt back if it was detached? 
+                    # But it was fetched in this session. Rollback invalidates it?
+                    # SQLAlchemy async session: objects expire on commit/rollback.
+                    # So accessing receipt.* triggers refresh.
+                    
+                    await db.commit()
+            except Exception as commit_err:
+                print(f"DEBUG: Failed to save error state for receipt {receipt_id}: {commit_err}")

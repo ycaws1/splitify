@@ -26,10 +26,11 @@ export default function NewReceiptPage() {
   // Upload state
   const [uploading, setUploading] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
+  const [uploadCurrency, setUploadCurrency] = useState("");
 
   // Manual state
   const [merchantName, setMerchantName] = useState("");
-  const [currency, setCurrency] = useState("MYR");
+  const [currency, setCurrency] = useState("SGD");
   const [receiptDate, setReceiptDate] = useState("");
   const [tax, setTax] = useState("9");
   const [taxIsPercent, setTaxIsPercent] = useState(true);
@@ -91,7 +92,7 @@ export default function NewReceiptPage() {
 
       const receipt = await apiFetch(`/api/groups/${groupId}/receipts`, {
         method: "POST",
-        body: JSON.stringify({ image_url: urlData.publicUrl }),
+        body: JSON.stringify({ image_url: urlData.publicUrl, currency: uploadCurrency || undefined }),
       });
 
       router.push(`/groups/${groupId}/receipts`);
@@ -178,6 +179,24 @@ export default function NewReceiptPage() {
       {/* Upload tab */}
       {tab === "upload" && (
         <>
+          <div className="mb-6">
+            <label className="mb-2 block text-sm font-medium text-stone-700">
+              Receipt Currency <span className="text-stone-400 font-normal">(Auto-detect if unsure)</span>
+            </label>
+            <select
+              value={uploadCurrency}
+              onChange={(e) => setUploadCurrency(e.target.value)}
+              disabled={uploading || !!preview}
+              className="w-full rounded-xl border-stone-200 bg-white p-3 text-sm shadow-sm focus:border-emerald-500 focus:ring-emerald-500 disabled:opacity-50"
+            >
+              <option value="">Auto-detect (AI)</option>
+              {COMMON_CURRENCIES.map((c) => (
+                <option key={c} value={c}>
+                  {c} ({getCurrencySymbol(c)})
+                </option>
+              ))}
+            </select>
+          </div>
           {preview ? (
             <div className="space-y-4">
               <img src={preview} alt="Receipt preview" className="w-full rounded-xl border border-stone-200" />

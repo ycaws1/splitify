@@ -29,7 +29,7 @@ class Receipt(Base):
     image_url: Mapped[str] = mapped_column(String, nullable=False)
     merchant_name: Mapped[str | None] = mapped_column(String, nullable=True)
     receipt_date: Mapped[date | None] = mapped_column(Date, nullable=True)
-    currency: Mapped[str] = mapped_column(String(3), default="MYR")
+    currency: Mapped[str] = mapped_column(String(3), default="SGD")
     exchange_rate: Mapped[Decimal] = mapped_column(Numeric(12, 6), default=Decimal("1"))
     subtotal: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     tax: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)

@@ -23,6 +23,10 @@ class Payment(Base):
     receipt: Mapped["Receipt"] = relationship(back_populates="payments")
     payer: Mapped["User"] = relationship(lazy="selectin")
 
+    @property
+    def payer_name(self) -> str | None:
+        return self.payer.display_name if self.payer else None
+
 
 class Settlement(Base):
     __tablename__ = "settlements"

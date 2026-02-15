@@ -11,7 +11,6 @@ def _get_async_url(url: str) -> str:
         return url.replace("postgresql://", "postgresql+asyncpg://", 1)
     if url.startswith("postgres://"):
         return url.replace("postgres://", "postgresql+asyncpg://", 1)
-
     return url
 
 _db_url = _get_async_url(settings.database_url)

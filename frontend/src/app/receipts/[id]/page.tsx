@@ -29,6 +29,7 @@ export default function ReceiptDetailPage() {
   const [headerForm, setHeaderForm] = useState<{
     merchant_name: string;
     receipt_date: string;
+    currency: string;
     tax: string;
     service_charge: string;
   } | null>(null);
@@ -233,7 +234,7 @@ export default function ReceiptDetailPage() {
     }
     setPayError(null);
     try {
-      await apiFetch(`/api/receipts/${receiptId}/payments`, {
+      const newPayment = await apiFetch(`/api/receipts/${receiptId}/payments`, {
         method: "POST",
         body: JSON.stringify({
           paid_by: payUserId,
@@ -242,8 +243,14 @@ export default function ReceiptDetailPage() {
       });
       setPayAmount("");
       setPayUserId("");
-      const p = await apiFetch(`/api/receipts/${receiptId}/payments`);
-      setPayments(p);
+      // Optimistically add to list (backend should return full object with payer_name ideally,
+      // but if payer_name missing we can find it from members list)
+      const payer = members.find(m => m.user_id === newPayment.paid_by);
+      const paymentWithInfo = {
+        ...newPayment,
+        payer_name: newPayment.payer_name || payer?.display_name || "Unknown",
+      };
+      setPayments([...payments, paymentWithInfo]);
     } catch (err: unknown) {
       setPayError(err instanceof Error ? err.message : "Failed to record payment");
     }
@@ -268,8 +275,7 @@ export default function ReceiptDetailPage() {
     if (!confirm("Remove this payment?")) return;
     try {
       await apiFetch(`/api/payments/${paymentId}`, { method: "DELETE" });
-      const p = await apiFetch(`/api/receipts/${receiptId}/payments`);
-      setPayments(p);
+      setPayments(payments.filter(p => p.id !== paymentId));
     } catch (err) {
       console.error(err);
     }
@@ -293,6 +299,7 @@ export default function ReceiptDetailPage() {
     setHeaderForm({
       merchant_name: receipt.merchant_name || "",
       receipt_date: receipt.receipt_date || "",
+      currency: receipt.currency || "SGD",
       tax: receipt.tax || "",
       service_charge: receipt.service_charge || "",
     });
@@ -307,6 +314,7 @@ export default function ReceiptDetailPage() {
         body: JSON.stringify({
           merchant_name: headerForm.merchant_name,
           receipt_date: headerForm.receipt_date || null,
+          currency: headerForm.currency,
           tax: headerForm.tax ? parseFloat(headerForm.tax) : null,
           service_charge: headerForm.service_charge ? parseFloat(headerForm.service_charge) : null,
           version: receipt.version,
@@ -393,6 +401,9 @@ export default function ReceiptDetailPage() {
   if (!receipt)
     return <p className="p-6 text-rose-500">Receipt not found</p>;
 
+  // Common currencies for dropdown
+  const COMMON_CURRENCIES = ["SGD", "MYR", "USD", "EUR", "GBP", "JPY", "CNY", "KRW", "THB", "IDR", "VND", "AUD"];
+
   return (
     <div className="mx-auto max-w-2xl px-4 py-6 space-y-6">
       {/* Header */}
@@ -418,6 +429,18 @@ export default function ReceiptDetailPage() {
                   onChange={(e) => setHeaderForm({ ...headerForm, receipt_date: e.target.value })}
                   className="block w-full rounded-lg border border-stone-300 px-3 py-2 text-sm focus:border-emerald-600 focus:outline-none"
                 />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-stone-700">Currency</label>
+                <select
+                  value={headerForm.currency}
+                  onChange={(e) => setHeaderForm({ ...headerForm, currency: e.target.value })}
+                  className="block w-full rounded-lg border border-stone-300 px-3 py-2 text-sm focus:border-emerald-600 focus:outline-none"
+                >
+                  {COMMON_CURRENCIES.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">

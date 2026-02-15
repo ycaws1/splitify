@@ -26,7 +26,7 @@ export default function NewReceiptPage() {
   // Upload state
   const [uploading, setUploading] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
-  const [uploadCurrency, setUploadCurrency] = useState("");
+  const [uploadCurrency, setUploadCurrency] = useState("SGD");
 
   // Manual state
   const [merchantName, setMerchantName] = useState("");
@@ -181,7 +181,7 @@ export default function NewReceiptPage() {
         <>
           <div className="mb-6">
             <label className="mb-2 block text-sm font-medium text-stone-700">
-              Receipt Currency <span className="text-stone-400 font-normal">(Auto-detect if unsure)</span>
+              Receipt Currency
             </label>
             <select
               value={uploadCurrency}
@@ -189,7 +189,6 @@ export default function NewReceiptPage() {
               disabled={uploading || !!preview}
               className="w-full rounded-xl border-stone-200 bg-white p-3 text-sm shadow-sm focus:border-emerald-500 focus:ring-emerald-500 disabled:opacity-50"
             >
-              <option value="">Auto-detect (AI)</option>
               {COMMON_CURRENCIES.map((c) => (
                 <option key={c} value={c}>
                   {c} ({getCurrencySymbol(c)})

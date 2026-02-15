@@ -52,7 +52,7 @@ async def record_payment(
     payment = Payment(receipt_id=receipt_id, paid_by=paid_by, amount=amount)
     db.add(payment)
     await db.commit()
-    await db.refresh(payment)
+    await db.refresh(payment, attribute_names=["payer"])
     return payment
 
 
@@ -73,7 +73,7 @@ async def update_payment(
     payment.paid_by = paid_by
     payment.amount = amount
     await db.commit()
-    await db.refresh(payment)
+    await db.refresh(payment, attribute_names=["payer"])
     return payment
 
 

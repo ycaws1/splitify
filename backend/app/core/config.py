@@ -13,8 +13,10 @@ class Settings(BaseSettings):
     vapid_private_key: str
     vapid_public_key: str
     vapid_claims_email: str
-    google_model_name: str = "gemini-2.5-flash"
+    google_model_name: str = "gemini-2.5-flash-lite"
     cors_origins: str = "http://localhost:3000"
 
 
 settings = Settings()
+
+# Trigger reload for .env update

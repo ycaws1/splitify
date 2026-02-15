@@ -14,24 +14,22 @@ def _get_async_url(url: str) -> str:
     return url
 
 
+
 _db_url = _get_async_url(settings.database_url)
-_is_pgbouncer = "pooler.supabase.com" in _db_url
+
+print(f"DEBUG: database_url={_db_url}")
+# Force pgbouncer settings to resolve "DuplicatePreparedStatementError"
+# This confirms we are using transaction pooling which requires disabling prepared statements
+_is_pgbouncer = True 
+print(f"DEBUG: is_pgbouncer={_is_pgbouncer}")
 
 engine = create_async_engine(
     _db_url,
     echo=False,
-    pool_pre_ping=True,
-    **(
-        {
-            "poolclass": NullPool,
-            "connect_args": {
-                "statement_cache_size": 0,
-                "prepared_statement_cache_size": 0,
-            },
-        }
-        if _is_pgbouncer
-        else {}
-    ),
+    poolclass=NullPool,
+    connect_args={
+        "statement_cache_size": 0,
+    },
 )
 async_session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 

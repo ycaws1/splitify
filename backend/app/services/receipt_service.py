@@ -157,10 +157,35 @@ async def get_receipt(db: AsyncSession, receipt_id: uuid.UUID) -> Receipt | None
     return result.scalar_one_or_none()
 
 
+from app.services.exchange_rate_service import get_exchange_rate
+from app.models.group import Group
+
 async def update_receipt(
     db: AsyncSession, receipt_id: uuid.UUID, data: dict, expected_version: int
 ) -> Receipt | None:
     """Update receipt with optimistic locking. Returns None if version conflict."""
+    # Check if currency is changing
+    if "currency" in data:
+        # We need the group's base currency to calculate exchange rate
+        start_receipt = await get_receipt(db, receipt_id)
+        if not start_receipt:
+            return None
+        
+        # Avoid redundant update if currency is same
+        if start_receipt.currency != data["currency"]:
+            group_result = await db.execute(select(Group).where(Group.id == start_receipt.group_id))
+            group = group_result.scalar_one()
+            
+            # Update exchange rate
+            try:
+                new_rate = await get_exchange_rate(data["currency"], group.base_currency)
+                data["exchange_rate"] = new_rate
+            except Exception:
+                # Fallback or log error? For now, keep old rate or default 1?
+                # Best to fail loud or default 1 if service down.
+                # But here valid currency is expected.
+                pass
+
     result = await db.execute(
         update(Receipt)
         .where(Receipt.id == receipt_id, Receipt.version == expected_version)

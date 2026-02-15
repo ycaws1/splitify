@@ -306,8 +306,11 @@ export default function ReceiptDetailPage() {
     setIsEditingHeader(true);
   };
 
+  const [isSavingHeader, setIsSavingHeader] = useState(false);
+
   const saveHeader = async () => {
     if (!headerForm || !receipt) return;
+    setIsSavingHeader(true);
     try {
       await apiFetch(`/api/receipts/${receiptId}`, {
         method: "PUT",
@@ -324,8 +327,30 @@ export default function ReceiptDetailPage() {
       fetchReceipt();
     } catch (err) {
       alert(err instanceof Error ? err.message : "Failed to update receipt details");
+    } finally {
+      setIsSavingHeader(false);
     }
   };
+
+  // ... (inside the return JSX) ...
+
+  <div className="flex justify-end gap-2 pt-2">
+    <button
+      onClick={() => setIsEditingHeader(false)}
+      disabled={isSavingHeader}
+      className="rounded-lg px-3 py-1.5 text-sm font-medium text-stone-600 hover:bg-stone-100 disabled:opacity-50"
+    >
+      Cancel
+    </button>
+    <button
+      onClick={saveHeader}
+      disabled={isSavingHeader}
+      className="rounded-lg bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800 disabled:opacity-50 flex items-center gap-2"
+    >
+      {isSavingHeader && <div className="h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent" />}
+      {isSavingHeader ? "Saving..." : "Save Details"}
+    </button>
+  </div>
 
   // Item editing handlers
   const handleAddItem = async () => {
@@ -468,15 +493,18 @@ export default function ReceiptDetailPage() {
             <div className="flex justify-end gap-2 pt-2">
               <button
                 onClick={() => setIsEditingHeader(false)}
-                className="rounded-lg px-3 py-1.5 text-sm font-medium text-stone-600 hover:bg-stone-100"
+                disabled={isSavingHeader}
+                className="rounded-lg px-3 py-1.5 text-sm font-medium text-stone-600 hover:bg-stone-100 disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
                 onClick={saveHeader}
-                className="rounded-lg bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800"
+                disabled={isSavingHeader}
+                className="rounded-lg bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800 disabled:opacity-50 flex items-center gap-2"
               >
-                Save Details
+                {isSavingHeader && <div className="h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent" />}
+                {isSavingHeader ? "Saving..." : "Save Details"}
               </button>
             </div>
           </div>

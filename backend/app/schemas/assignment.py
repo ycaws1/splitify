@@ -13,6 +13,12 @@ class BulkAssignRequest(BaseModel):
     version: int  # receipt version for optimistic locking
 
 
+class ToggleAssignmentRequest(BaseModel):
+    line_item_id: uuid.UUID
+    user_id: uuid.UUID
+    version: int | None = None  # optional, if not provided, skip strict check
+
+
 class AssignmentResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: uuid.UUID

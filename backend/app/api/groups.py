@@ -6,8 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import get_current_user
 from app.core.database import get_db
 from app.models.user import User
-from app.schemas.group import GroupCreate, GroupResponse, GroupListResponse, InviteResponse
-from app.services.group_service import create_group, list_user_groups, get_group, join_group_by_code
+from app.schemas.group import GroupCreate, GroupUpdate, GroupResponse, GroupListResponse, InviteResponse
+from app.services.group_service import create_group, list_user_groups, get_group, update_group, join_group_by_code, delete_group
 
 router = APIRouter(prefix="/api/groups", tags=["groups"])
 
@@ -18,7 +18,7 @@ async def create(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    group = await create_group(db, body.name, user)
+    group = await create_group(db, body.name, user, base_currency=body.base_currency)
     return group
 
 
@@ -40,6 +40,31 @@ async def get(
     if not group:
         raise HTTPException(status_code=404, detail="Group not found")
     return group
+
+
+@router.put("/{group_id}", response_model=GroupResponse)
+async def update(
+    group_id: uuid.UUID,
+    body: GroupUpdate,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    group = await update_group(db, group_id, body.base_currency)
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+    return group
+
+
+@router.delete("/{group_id}", status_code=204)
+async def delete(
+    group_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        await delete_group(db, group_id, user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=403, detail=str(e))
 
 
 @router.post("/{group_id}/invite", response_model=InviteResponse)

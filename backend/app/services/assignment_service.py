@@ -60,11 +60,90 @@ async def bulk_assign(
                 user_id=user_id,
                 share_amount=share,
             )
-            db.add(assignment)
             new_assignments.append(assignment)
+
+    # Bulk insert all assignments in one operation
+    if new_assignments:
+        db.add_all(new_assignments)
 
     await db.commit()
     return new_assignments
+
+
+async def toggle_assignment(
+    db: AsyncSession,
+    receipt_id: uuid.UUID,
+    line_item_id: uuid.UUID,
+    user_id: uuid.UUID,
+    expected_version: int | None,
+) -> dict | None:
+    """
+    Toggle a single assignment on/off efficiently.
+    Returns dict with {assigned: bool, new_version: int} or None if version conflict.
+    """
+    # Version check and increment
+    stmt = update(Receipt).where(Receipt.id == receipt_id)
+    if expected_version is not None:
+        stmt = stmt.where(Receipt.version == expected_version)
+    
+    # Increment version (blindly or conditionally)
+    stmt = stmt.values(version=Receipt.version + 1).returning(Receipt.version)
+    
+    result = await db.execute(stmt)
+    new_ver = result.scalar_one_or_none()
+    
+    if new_ver is None:
+        return None  # version conflict or receipt not found
+
+    # Check if assignment exists
+    existing = await db.execute(
+        select(LineItemAssignment).where(
+            LineItemAssignment.line_item_id == line_item_id,
+            LineItemAssignment.user_id == user_id,
+        )
+    )
+    assignment = existing.scalar_one_or_none()
+
+    if assignment:
+        # Remove assignment
+        await db.delete(assignment)
+        await db.commit()
+        return {"assigned": False, "new_version": new_ver}
+    else:
+        # Add assignment - need to calculate share amount
+        line_item_result = await db.execute(
+            select(LineItem).where(LineItem.id == line_item_id)
+        )
+        line_item = line_item_result.scalar_one_or_none()
+        if not line_item:
+            await db.rollback()
+            return None
+
+        # Count existing assignments to calculate new share
+        count_result = await db.execute(
+            select(LineItemAssignment).where(
+                LineItemAssignment.line_item_id == line_item_id
+            )
+        )
+        existing_assignments = list(count_result.scalars().all())
+        num_users = len(existing_assignments) + 1  # +1 for the new user
+        share = (line_item.amount / Decimal(num_users)).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
+        )
+
+        # Update existing assignments with new share
+        for existing_assignment in existing_assignments:
+            existing_assignment.share_amount = share
+
+        # Create new assignment
+        new_assignment = LineItemAssignment(
+            line_item_id=line_item_id,
+            user_id=user_id,
+            share_amount=share,
+        )
+        db.add(new_assignment)
+        await db.commit()
+        return {"assigned": True, "new_version": new_ver}
 
 
 async def get_assignments(db: AsyncSession, receipt_id: uuid.UUID) -> list[LineItemAssignment]:

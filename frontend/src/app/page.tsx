@@ -1,35 +1,34 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/components/auth-provider";
 import { Auth } from "@supabase/auth-ui-react";
 import { ThemeSupa } from "@supabase/auth-ui-shared";
 
 export default function LoginPage() {
   const supabase = createClient();
   const router = useRouter();
+  const { session } = useAuth();
+  const syncedRef = useRef(false);
 
+  // If already logged in, redirect immediately
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        if (session) {
-          fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/auth/callback`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              id: session.user.id,
-              email: session.user.email,
-              display_name: session.user.user_metadata.full_name || session.user.email?.split("@")[0] || "User",
-              avatar_url: session.user.user_metadata.avatar_url || null,
-            }),
-          });
-          router.push("/dashboard");
-        }
-      }
-    );
-    return () => subscription.unsubscribe();
-  }, [router, supabase.auth]);
+    if (session && !syncedRef.current) {
+      syncedRef.current = true;
+      fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/auth/callback`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: session.user.id,
+          email: session.user.email,
+          display_name: session.user.user_metadata.full_name || session.user.email?.split("@")[0] || "User",
+          avatar_url: session.user.user_metadata.avatar_url || null,
+        }),
+      }).then(() => router.push("/dashboard"));
+    }
+  }, [session, router]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-stone-50 px-4">

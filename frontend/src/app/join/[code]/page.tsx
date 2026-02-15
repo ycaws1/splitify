@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
-import { AuthGuard } from "@/components/auth-guard";
+import { AuthGuard } from "@/components/auth-provider";
 
 export default function JoinGroupPage() {
   const params = useParams();

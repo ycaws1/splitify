@@ -2,6 +2,7 @@ export interface Group {
   id: string;
   name: string;
   invite_code: string;
+  base_currency: string;
   created_by: string;
   created_at: string;
   members: GroupMember[];
@@ -22,6 +23,7 @@ export interface Receipt {
   merchant_name: string | null;
   receipt_date: string | null;
   currency: string;
+  exchange_rate: string;
   subtotal: string | null;
   tax: string | null;
   service_charge: string | null;
@@ -39,6 +41,7 @@ export interface LineItem {
   unit_price: string;
   amount: string;
   sort_order: number;
+  assignments: Assignment[];
 }
 
 export interface Assignment {

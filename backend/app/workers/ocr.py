@@ -1,12 +1,18 @@
 import json
 import uuid
+import logging
+import base64
 
-import anthropic
+import google.generativeai as genai
+import httpx
 from sqlalchemy import select
 
 from app.core.config import settings
 from app.core.database import async_session_factory
 from app.models.receipt import Receipt, LineItem, ReceiptStatus
+from app.models.group import Group
+
+logger = logging.getLogger(__name__)
 
 
 EXTRACTION_PROMPT = """Analyze this receipt/invoice image. Extract all information into this exact JSON structure:
@@ -34,46 +40,152 @@ Rules:
 - If a field is not visible, use null.
 - amount = quantity * unit_price for each line item.
 - Use the currency shown on the receipt, default to MYR if unclear.
+- EXTRACT TAX explicitly. Look for keywords like "Tax", "GST", "SST", "VAT".
+- EXTRACT SERVICE CHARGE explicitly. Look for keywords like "Service Charge", "SVC", "Svc Chg".
+- Do not include tax or service charge in line items unless they are listed as line items. If they are summarily listed at the bottom, put them in tax/service_charge fields.
 """
+
+
+async def fetch_exchange_rate(from_currency: str, to_currency: str) -> float:
+    """Fetch exchange rate from external API"""
+    if from_currency == to_currency:
+        return 1.0
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"https://api.exchangerate-api.com/v4/latest/{from_currency}",
+                timeout=5.0
+            )
+            if response.status_code == 200:
+                data = response.json()
+                rate = data.get("rates", {}).get(to_currency)
+                if rate:
+                    logger.info(f"Fetched exchange rate: 1 {from_currency} = {rate} {to_currency}")
+                    return float(rate)
+    except Exception as e:
+        logger.warning(f"Failed to fetch exchange rate: {e}")
+    
+    return 1.0  # Fallback
 
 
 async def process_receipt_ocr(receipt_id: uuid.UUID) -> None:
     async with async_session_factory() as db:
-        result = await db.execute(select(Receipt).where(Receipt.id == receipt_id))
-        receipt = result.scalar_one_or_none()
-        if not receipt:
-            return
-
         try:
-            client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-            message = client.messages.create(
-                model="claude-sonnet-4-5-20250929",
-                max_tokens=4096,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "image",
-                                "source": {"type": "url", "url": receipt.image_url},
-                            },
-                            {"type": "text", "text": EXTRACTION_PROMPT},
-                        ],
-                    }
-                ],
-            )
+            # Fetch receipt
+            result = await db.execute(select(Receipt).where(Receipt.id == receipt_id))
+            receipt = result.scalar_one_or_none()
+            
+            if not receipt:
+                logger.error(f"Receipt {receipt_id} not found")
+                return
 
-            raw_text = message.content[0].text
+            # Download and encode image
+            logger.info(f"Downloading image from: {receipt.image_url}")
+            
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.get(receipt.image_url)
+                response.raise_for_status()
+                image_data = response.content
+                
+            mime_type = "image/jpeg"
+            if receipt.image_url.lower().endswith(".png"):
+                mime_type = "image/png"
+            elif receipt.image_url.lower().endswith(".webp"):
+                mime_type = "image/webp"
+
+            image_parts = [
+                {
+                    "mime_type": mime_type,
+                    "data": image_data
+                }
+            ]
+
+            # Configure Gemini
+            genai.configure(api_key=settings.google_api_key)
+            model = genai.GenerativeModel('gemini-3-flash-preview')
+            
+            response = await model.generate_content_async([
+                image_parts[0],
+                EXTRACTION_PROMPT
+            ])
+            
+            raw_text = response.text
+            
+            logger.info(f"Received OCR response for receipt {receipt_id}")
+            
+            # Remove markdown code blocks if present
+            if "```json" in raw_text:
+                raw_text = raw_text.split("```json")[1].split("```")[0].strip()
+            elif "```" in raw_text:
+                raw_text = raw_text.split("```")[1].split("```")[0].strip()
+            
             data = json.loads(raw_text)
 
             receipt.merchant_name = data.get("merchant_name")
-            receipt.receipt_date = data.get("receipt_date")
+            
+            date_str = data.get("receipt_date")
+            if date_str:
+                try:
+                    from datetime import datetime
+                    # Try parsing simpler date formats too if complex one fails
+                    try:
+                        receipt.receipt_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+                    except ValueError:
+                         # Fallback for DD/MM/YYYY or similar if needed, or just let it fail
+                        receipt.receipt_date = datetime.strptime(date_str, "%d/%m/%Y").date()
+                except ValueError:
+                    logger.warning(f"Invalid date format from OCR: {date_str}")
+                    receipt.receipt_date = None
+            else:
+                receipt.receipt_date = None
+
             receipt.currency = data.get("currency", "MYR")
             receipt.subtotal = data.get("subtotal")
-            receipt.tax = data.get("tax")
-            receipt.service_charge = data.get("service_charge")
+            
+            # Move Tax and Service Charge to line items for easier splitting
+            # Always include them, even if 0
+            def _get_val(v):
+                if v is None: return 0.0
+                try: return float(v)
+                except: return 0.0
+
+            tax_val = _get_val(data.get("tax"))
+            svc_val = _get_val(data.get("service_charge"))
+            
+            receipt.tax = 0
+            receipt.service_charge = 0
+            
+            # Append to line_items list
+            if "line_items" not in data or data["line_items"] is None:
+                data["line_items"] = []
+                
+            data["line_items"].append({
+                "description": "Tax",
+                "quantity": 1,
+                "unit_price": tax_val,
+                "amount": tax_val
+            })
+            data["line_items"].append({
+                "description": "Service Charge",
+                "quantity": 1,
+                "unit_price": svc_val,
+                "amount": svc_val
+            })
             receipt.total = data.get("total")
             receipt.raw_llm_response = data
+            
+            # Fetch group's base currency
+            group_result = await db.execute(select(Group).where(Group.id == receipt.group_id))
+            group = group_result.scalar_one_or_none()
+            base_currency = group.base_currency if group else "SGD"
+            
+            # Fetch exchange rate
+            exchange_rate = await fetch_exchange_rate(receipt.currency, base_currency)
+            receipt.exchange_rate = exchange_rate
+            
+            logger.info(f"Exchange rate for receipt {receipt_id}: 1 {receipt.currency} = {exchange_rate} {base_currency}")
+            
             receipt.status = ReceiptStatus.extracted
 
             for i, item in enumerate(data.get("line_items", [])):
@@ -88,7 +200,9 @@ async def process_receipt_ocr(receipt_id: uuid.UUID) -> None:
                 db.add(line_item)
 
             await db.commit()
+            logger.info(f"Successfully processed receipt {receipt_id}")
 
-        except Exception:
-            receipt.status = ReceiptStatus.processing  # stays in processing on failure
+        except Exception as e:
+            logger.error(f"OCR processing failed for receipt {receipt_id}: {e}", exc_info=True)
+            receipt.status = ReceiptStatus.failed
             await db.commit()

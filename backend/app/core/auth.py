@@ -1,8 +1,10 @@
 import uuid
 
+import httpx
+import jwt as pyjwt
+from jwt import PyJWK
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError, jwt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +14,21 @@ from app.models.user import User
 
 security = HTTPBearer()
 
+_jwks_cache: list | None = None
+
+
+async def _get_jwks() -> list:
+    global _jwks_cache
+    if _jwks_cache is not None:
+        return _jwks_cache
+    jwks_url = f"{settings.supabase_url}/auth/v1/.well-known/jwks.json"
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(jwks_url)
+        resp.raise_for_status()
+        keys = resp.json().get("keys", [])
+        _jwks_cache = [PyJWK(k) for k in keys]
+        return _jwks_cache
+
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
@@ -19,13 +36,25 @@ async def get_current_user(
 ) -> User:
     token = credentials.credentials
     try:
-        payload = jwt.decode(
+        jwks = await _get_jwks()
+        header = pyjwt.get_unverified_header(token)
+        kid = header.get("kid")
+
+        key = None
+        for k in jwks:
+            if k.key_id == kid:
+                key = k
+                break
+        if key is None:
+            raise pyjwt.InvalidTokenError("No matching key found")
+
+        payload = pyjwt.decode(
             token,
-            settings.supabase_jwt_secret,
-            algorithms=["HS256"],
+            key,
+            algorithms=["ES256"],
             audience="authenticated",
         )
-    except JWTError:
+    except pyjwt.InvalidTokenError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
     user_id = payload.get("sub")

@@ -14,6 +14,7 @@ class PaymentResponse(BaseModel):
     id: uuid.UUID
     receipt_id: uuid.UUID
     paid_by: uuid.UUID
+    payer_name: str | None = None
     amount: Decimal
     created_at: datetime
 
@@ -28,6 +29,8 @@ class BalanceEntry(BaseModel):
 
 class BalancesResponse(BaseModel):
     balances: list[BalanceEntry]
+    total_assigned: Decimal = Decimal("0")
+    total_paid: Decimal = Decimal("0")
 
 
 class SettleRequest(BaseModel):

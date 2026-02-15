@@ -3,14 +3,14 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { AuthGuard } from "@/components/auth-guard";
+import { AuthGuard } from "@/components/auth-provider";
 import { PushRegistration } from "@/components/push-registration";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
-  const supabase = createClient();
 
   const handleLogout = async () => {
+    const supabase = createClient();
     await supabase.auth.signOut();
     router.push("/");
   };
@@ -27,12 +27,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               </div>
               <span className="text-lg font-bold text-stone-900">Splitify</span>
             </Link>
-            <button
-              onClick={handleLogout}
-              className="rounded-lg px-3 py-1.5 text-sm text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-700"
-            >
-              Logout
-            </button>
+            <div className="flex items-center gap-2">
+              <Link
+                href="/dashboard/profile"
+                className="rounded-lg px-3 py-1.5 text-sm text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-700"
+              >
+                Profile
+              </Link>
+              <button
+                onClick={handleLogout}
+                className="rounded-lg px-3 py-1.5 text-sm text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-700"
+              >
+                Logout
+              </button>
+            </div>
           </div>
         </header>
         <main className="mx-auto max-w-2xl px-4 py-6 animate-page">{children}</main>

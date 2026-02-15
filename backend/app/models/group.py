@@ -26,11 +26,12 @@ class Group(Base):
         default=lambda: ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(8))
     )
     created_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    base_currency: Mapped[str] = mapped_column(String(3), default="SGD")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
 
-    members: Mapped[list["GroupMember"]] = relationship(back_populates="group", lazy="selectin")
+    members: Mapped[list["GroupMember"]] = relationship(back_populates="group", lazy="selectin", cascade="all, delete-orphan")
 
 
 class GroupMember(Base):
@@ -47,3 +48,7 @@ class GroupMember(Base):
 
     group: Mapped["Group"] = relationship(back_populates="members")
     user: Mapped["User"] = relationship(lazy="selectin")
+
+    @property
+    def display_name(self) -> str:
+        return self.user.display_name if self.user else "Unknown"

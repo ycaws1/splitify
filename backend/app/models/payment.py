@@ -20,6 +20,7 @@ class Payment(Base):
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
 
+    receipt: Mapped["Receipt"] = relationship(back_populates="payments")
     payer: Mapped["User"] = relationship(lazy="selectin")
 
 

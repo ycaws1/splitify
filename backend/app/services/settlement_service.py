@@ -10,56 +10,65 @@ from app.models.payment import Payment, Settlement
 from app.models.user import User
 
 
-async def calculate_balances(db: AsyncSession, group_id: uuid.UUID) -> list[dict]:
+async def calculate_balances(db: AsyncSession, group_id: uuid.UUID) -> dict:
     """
     Calculate net balances for a group.
-    Returns simplified list of {from_user_id, from_user_name, to_user_id, to_user_name, amount} debts.
+    Returns dict with:
+      - balances: simplified list of debts
+      - total_assigned: total amount assigned across all receipts
+      - total_paid: total payments recorded
     """
-    # Get all receipts in the group
+    # Get receipt IDs for this group (select only id column)
     receipts_result = await db.execute(
-        select(Receipt).where(Receipt.group_id == group_id)
+        select(Receipt.id).where(Receipt.group_id == group_id)
     )
-    receipts = receipts_result.scalars().all()
-    receipt_ids = [r.id for r in receipts]
+    receipt_ids = list(receipts_result.scalars().all())
 
     if not receipt_ids:
-        return []
+        return {"balances": [], "total_assigned": Decimal("0"), "total_paid": Decimal("0")}
 
-    # Get all assignments (what each user owes)
+    # Select assignments with exchange rate from receipt
     assignments_result = await db.execute(
-        select(LineItemAssignment)
+        select(LineItemAssignment.user_id, LineItemAssignment.share_amount, Receipt.exchange_rate)
         .join(LineItem, LineItem.id == LineItemAssignment.line_item_id)
+        .join(Receipt, Receipt.id == LineItem.receipt_id)
         .where(LineItem.receipt_id.in_(receipt_ids))
     )
-    assignments = assignments_result.scalars().all()
+    assignments = assignments_result.all()
 
-    # Get all payments (what each user paid)
+    # Select payments with exchange rate from receipt
     payments_result = await db.execute(
-        select(Payment).where(Payment.receipt_id.in_(receipt_ids))
+        select(Payment.paid_by, Payment.amount, Receipt.exchange_rate)
+        .join(Receipt, Receipt.id == Payment.receipt_id)
+        .where(Payment.receipt_id.in_(receipt_ids))
     )
-    payments = payments_result.scalars().all()
+    payments = payments_result.all()
 
-    # Get settled amounts
     settlements_result = await db.execute(
-        select(Settlement).where(
+        select(Settlement.from_user, Settlement.to_user, Settlement.amount)
+        .where(
             Settlement.group_id == group_id,
             Settlement.is_settled == True,
         )
     )
-    settlements = settlements_result.scalars().all()
+    settlements = settlements_result.all()
+
+    # Convert amounts to base currency using exchange_rate
+    total_assigned = sum((share * rate for _, share, rate in assignments), Decimal("0"))
+    total_paid = sum((amt * rate for _, amt, rate in payments), Decimal("0"))
 
     # Calculate net: positive = owes money, negative = is owed
     net = defaultdict(Decimal)
 
-    for a in assignments:
-        net[a.user_id] += a.share_amount  # user owes this much
+    for user_id, share_amount, rate in assignments:
+        net[user_id] += share_amount * rate
 
-    for p in payments:
-        net[p.paid_by] -= p.amount  # user paid this much
+    for paid_by, amount, rate in payments:
+        net[paid_by] -= amount * rate
 
-    for s in settlements:
-        net[s.from_user] -= s.amount  # settled debt reduces what they owe
-        net[s.to_user] += s.amount  # and reduces what they're owed
+    for from_user, to_user, amount in settlements:
+        net[from_user] -= amount
+        net[to_user] += amount
 
     # Simplify debts using greedy algorithm
     debtors = []  # (user_id, amount they owe)
@@ -105,4 +114,8 @@ async def calculate_balances(db: AsyncSession, group_id: uuid.UUID) -> list[dict
         if creditors[j][1] <= Decimal("0.01"):
             j += 1
 
-    return result
+    return {
+        "balances": result,
+        "total_assigned": total_assigned.quantize(Decimal("0.01")),
+        "total_paid": total_paid.quantize(Decimal("0.01")),
+    }

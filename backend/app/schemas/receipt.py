@@ -8,6 +8,40 @@ class ReceiptCreate(BaseModel):
     image_url: str
 
 
+class LineItemCreate(BaseModel):
+    description: str
+    quantity: Decimal = Decimal("1")
+    amount: Decimal
+
+
+class LineItemInput(LineItemCreate):
+    pass
+
+
+class LineItemUpdate(BaseModel):
+    description: str | None = None
+    quantity: Decimal | None = None
+    amount: Decimal | None = None
+
+
+class ManualReceiptCreate(BaseModel):
+    merchant_name: str
+    currency: str = "MYR"
+    exchange_rate: Decimal = Decimal("1")
+    receipt_date: date | None = None
+    tax: Decimal | None = None
+    service_charge: Decimal | None = None
+    items: list[LineItemInput]
+
+
+class LineItemAssignmentResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    line_item_id: uuid.UUID
+    user_id: uuid.UUID
+    share_amount: Decimal
+
+
 class LineItemResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: uuid.UUID
@@ -16,6 +50,7 @@ class LineItemResponse(BaseModel):
     unit_price: Decimal
     amount: Decimal
     sort_order: int
+    assignments: list[LineItemAssignmentResponse] = []
 
 
 class ReceiptResponse(BaseModel):
@@ -27,6 +62,7 @@ class ReceiptResponse(BaseModel):
     merchant_name: str | None
     receipt_date: date | None
     currency: str
+    exchange_rate: Decimal
     subtotal: Decimal | None
     tax: Decimal | None
     service_charge: Decimal | None
@@ -41,6 +77,7 @@ class ReceiptUpdate(BaseModel):
     merchant_name: str | None = None
     receipt_date: date | None = None
     currency: str | None = None
+    exchange_rate: Decimal | None = None
     subtotal: Decimal | None = None
     tax: Decimal | None = None
     service_charge: Decimal | None = None
@@ -53,5 +90,7 @@ class ReceiptListResponse(BaseModel):
     id: uuid.UUID
     merchant_name: str | None
     total: Decimal | None
+    currency: str
+    exchange_rate: Decimal
     status: str
     created_at: datetime

@@ -5,7 +5,7 @@ from alembic import context
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.core.config import settings
-from app.core.database import Base
+from app.core.database import Base, _get_async_url
 
 # Import all models so they register with Base.metadata
 from app.models import *  # noqa: F401, F403
@@ -17,8 +17,13 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 
+def _get_migration_url() -> str:
+    """Prefer direct connection (port 5432) for migrations to bypass pgBouncer."""
+    return _get_async_url(settings.direct_database_url or settings.database_url)
+
+
 def run_migrations_offline() -> None:
-    url = settings.database_url
+    url = _get_migration_url()
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -36,7 +41,13 @@ def do_run_migrations(connection):
 
 
 async def run_async_migrations() -> None:
-    connectable = create_async_engine(settings.database_url)
+    connectable = create_async_engine(
+        _get_migration_url(),
+        connect_args={
+            "statement_cache_size": 0,
+            "prepared_statement_cache_size": 0,
+        },
+    )
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
     await connectable.dispose()

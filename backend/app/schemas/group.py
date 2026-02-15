@@ -5,6 +5,11 @@ from pydantic import BaseModel, ConfigDict
 
 class GroupCreate(BaseModel):
     name: str
+    base_currency: str = "SGD"
+
+
+class GroupUpdate(BaseModel):
+    base_currency: str
 
 
 class MemberResponse(BaseModel):
@@ -20,6 +25,7 @@ class GroupResponse(BaseModel):
     id: uuid.UUID
     name: str
     invite_code: str
+    base_currency: str
     created_by: uuid.UUID
     created_at: datetime
     members: list[MemberResponse] = []
@@ -29,6 +35,7 @@ class GroupListResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: uuid.UUID
     name: str
+    base_currency: str
     created_at: datetime
 
 

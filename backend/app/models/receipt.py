@@ -17,6 +17,7 @@ class ReceiptStatus(str, enum.Enum):
     processing = "processing"
     extracted = "extracted"
     confirmed = "confirmed"
+    failed = "failed"
 
 
 class Receipt(Base):
@@ -29,6 +30,7 @@ class Receipt(Base):
     merchant_name: Mapped[str | None] = mapped_column(String, nullable=True)
     receipt_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     currency: Mapped[str] = mapped_column(String(3), default="MYR")
+    exchange_rate: Mapped[Decimal] = mapped_column(Numeric(12, 6), default=Decimal("1"))
     subtotal: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     tax: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     service_charge: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
@@ -42,7 +44,8 @@ class Receipt(Base):
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
 
-    line_items: Mapped[list["LineItem"]] = relationship(back_populates="receipt", lazy="selectin", order_by="LineItem.sort_order")
+    line_items: Mapped[list["LineItem"]] = relationship(back_populates="receipt", lazy="selectin", order_by="LineItem.sort_order", cascade="all, delete-orphan")
+    payments: Mapped[list["Payment"]] = relationship(cascade="all, delete-orphan", lazy="noload")
     uploader: Mapped["User"] = relationship(lazy="selectin")
 
 
@@ -58,7 +61,7 @@ class LineItem(Base):
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
 
     receipt: Mapped["Receipt"] = relationship(back_populates="line_items")
-    assignments: Mapped[list["LineItemAssignment"]] = relationship(back_populates="line_item", lazy="selectin")
+    assignments: Mapped[list["LineItemAssignment"]] = relationship(back_populates="line_item", lazy="selectin", cascade="all, delete-orphan")
 
 
 class LineItemAssignment(Base):

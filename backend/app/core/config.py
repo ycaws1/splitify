@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     vapid_private_key: str
     vapid_public_key: str
     vapid_claims_email: str
+    google_model_name: str = "gemini-2.5-flash"
 
 
 settings = Settings()

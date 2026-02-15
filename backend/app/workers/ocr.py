@@ -2,7 +2,6 @@ import json
 import uuid
 import logging
 import base64
-import asyncio
 
 import google.generativeai as genai
 import httpx
@@ -110,15 +109,15 @@ async def process_receipt_ocr(receipt_id: uuid.UUID, user_provided_currency: str
 
             # Configure Gemini
             genai.configure(api_key=settings.google_api_key)
-            model_name = 'gemini-2.5-flash' 
+            model_name = settings.google_model_name
             model = genai.GenerativeModel(model_name)
             
             ocr_start = time.time()
             print(f"DEBUG: Starting OCR with model {model_name}...")
-            response = await asyncio.to_thread(
-                model.generate_content,
-                [image_parts[0], EXTRACTION_PROMPT]
-            )
+            response = await model.generate_content_async([
+                image_parts[0],
+                EXTRACTION_PROMPT
+            ])
             ocr_duration = time.time() - ocr_start
             
             raw_text = response.text

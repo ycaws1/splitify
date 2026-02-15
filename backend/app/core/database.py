@@ -1,5 +1,10 @@
 import uuid
+import asyncpg
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+class CachingDisabledConnection(asyncpg.Connection):
+    def _get_unique_id(self, prefix: str) -> str:
+        return f"__asyncpg_{uuid.uuid4()}__"
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.pool import NullPool
 
@@ -32,8 +37,7 @@ engine = create_async_engine(
     poolclass=NullPool,
     connect_args={
         "statement_cache_size": 0,
-        "prepared_statement_cache_size": 0,
-        "prepared_statement_name_func": lambda: f"__asyncpg_{uuid.uuid4()}__",
+        "connection_class": CachingDisabledConnection,
     },
 )
 async_session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)

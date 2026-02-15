@@ -16,7 +16,7 @@ if not API_KEY:
     sys.exit(1)
 
 # Use the same model as the app
-MODEL_NAME = 'gemini-2.5-flash-lite'
+MODEL_NAME = 'gemini-2.0-flash-lite'
 
 EXTRACTION_PROMPT = """Analyze this receipt/invoice image. Extract all information into this exact JSON structure:
 

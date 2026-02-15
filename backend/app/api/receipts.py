@@ -140,6 +140,28 @@ async def confirm_receipt(
     return updated
 
 
+@router.post("/api/receipts/{receipt_id}/retry-ocr", response_model=ReceiptResponse)
+async def retry_ocr(
+    receipt_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    receipt = await get_receipt(db, receipt_id)
+    if not receipt:
+        raise HTTPException(status_code=404, detail="Receipt not found")
+    
+    # Update status back to processing
+    updated = await update_receipt(db, receipt_id, {"status": "processing", "raw_llm_response": None}, receipt.version)
+    if not updated:
+        raise HTTPException(status_code=409, detail="Version conflict")
+    
+    # Trigger OCR again
+    background_tasks.add_task(process_receipt_ocr, receipt.id, receipt.currency)
+    
+    return updated
+
+
 @router.post("/api/receipts/{receipt_id}/items", response_model=LineItemResponse, status_code=201)
 async def create_item(
     receipt_id: uuid.UUID,

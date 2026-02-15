@@ -541,6 +541,23 @@ export default function ReceiptDetailPage() {
               </pre>
             </details>
           )}
+          <button
+            onClick={async () => {
+              if (!confirm("Retry extracting receipt details?")) return;
+              try {
+                // Optimistically set to processing
+                setReceipt(prev => prev ? { ...prev, status: "processing" } : null);
+                await apiFetch(`/api/receipts/${receiptId}/retry-ocr`, { method: "POST" });
+                // Rely on polling/subscription to get update
+              } catch (err) {
+                alert("Failed to retry OCR");
+                fetchReceipt(); // Revert
+              }
+            }}
+            className="mt-3 rounded-lg bg-white border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-50 shadow-sm"
+          >
+            Retry Extraction
+          </button>
         </div>
       )}
 

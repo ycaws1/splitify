@@ -10,10 +10,10 @@ import { ThemeSupa } from "@supabase/auth-ui-shared";
 export default function LoginPage() {
   const supabase = createClient();
   const router = useRouter();
-  const { session } = useAuth();
+  const { session, loading } = useAuth();
   const syncedRef = useRef(false);
 
-  // If already logged in, redirect immediately
+  // If already logged in, sync and redirect
   useEffect(() => {
     if (session && !syncedRef.current) {
       syncedRef.current = true;
@@ -29,6 +29,17 @@ export default function LoginPage() {
       }).then(() => router.push("/dashboard"));
     }
   }, [session, router]);
+
+  // Show branded spinner while checking auth or redirecting
+  if (loading || session) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-stone-50">
+        <div className="flex h-12 w-12 animate-pulse items-center justify-center rounded-2xl bg-emerald-700 text-lg font-bold text-white">
+          S
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-stone-50 px-4">

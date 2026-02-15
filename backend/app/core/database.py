@@ -14,7 +14,7 @@ def _get_async_url(url: str) -> str:
     return url
 
 
-_db_url = _get_async_url(settings.direct_database_url or settings.database_url)
+_db_url = _get_async_url(settings.database_url)
 _is_pgbouncer = "pooler.supabase.com" in _db_url
 
 engine = create_async_engine(

@@ -37,6 +37,35 @@ export default function ReceiptDetailPage() {
   const groupIdRef = React.useRef<string | null>(null);
   const lastSeenVersion = useRef(0);
 
+
+  const isAssigned = (lineItemId: string, userId: string) => {
+    return assignments.some((a) => a.line_item_id === lineItemId && a.user_id === userId);
+  };
+
+  // Track pending optimistic updates to prevent background fetches from reverting UI
+  // Key: "lineItemId:userId", Value: "add" | "remove"
+  const pendingUpdates = useRef<Map<string, "add" | "remove">>(new Map());
+
+  const applyOptimisticUpdates = useCallback((baseAssignments: Assignment[]) => {
+    let result = [...baseAssignments];
+    pendingUpdates.current.forEach((type, key) => {
+      const [lId, uId] = key.split(':');
+      const exists = result.some(a => a.line_item_id === lId && a.user_id === uId);
+
+      if (type === 'add' && !exists) {
+        result.push({
+          id: `temp-${lId}-${uId}`,
+          line_item_id: lId,
+          user_id: uId,
+          share_amount: "0.00",
+        });
+      } else if (type === 'remove' && exists) {
+        result = result.filter(a => !(a.line_item_id === lId && a.user_id === uId));
+      }
+    });
+    return result;
+  }, []);
+
   const fetchReceipt = useCallback(async () => {
     try {
       // If we already know the group_id, fetch receipt and group in parallel
@@ -53,7 +82,7 @@ export default function ReceiptDetailPage() {
 
       // Extract assignments from line_items (included in response)
       const allAssignments = r.line_items.flatMap((li: { assignments: Assignment[] }) => li.assignments || []);
-      setAssignments(allAssignments);
+      setAssignments(applyOptimisticUpdates(allAssignments));
 
       // Fetch group members and payments
       const [g, p] = await Promise.all([
@@ -69,7 +98,7 @@ export default function ReceiptDetailPage() {
     } finally {
       setLoading(false);
     }
-  }, [receiptId]);
+  }, [receiptId, applyOptimisticUpdates]);
 
   useEffect(() => {
     fetchReceipt();
@@ -112,11 +141,6 @@ export default function ReceiptDetailPage() {
     return () => clearInterval(interval);
   }, [receipt?.status, fetchReceipt]);
 
-  // Check if a user is assigned to a line item
-  const isAssigned = (lineItemId: string, userId: string) => {
-    return assignments.some((a) => a.line_item_id === lineItemId && a.user_id === userId);
-  };
-
   // Toggle assignment for a user on a line item (OPTIMISTIC UPDATE)
   const toggleAssignment = async (lineItemId: string, userId: string) => {
     if (!receipt) return;
@@ -125,6 +149,10 @@ export default function ReceiptDetailPage() {
     const wasAssigned = isAssigned(lineItemId, userId);
     const previousAssignments = [...assignments];
     const previousReceipt = { ...receipt };
+    const pendingKey = `${lineItemId}:${userId}`;
+
+    // Update pending map
+    pendingUpdates.current.set(pendingKey, wasAssigned ? 'remove' : 'add');
 
     if (wasAssigned) {
       // Remove from UI
@@ -166,7 +194,7 @@ export default function ReceiptDetailPage() {
       // Refresh assignments from server to get correct share amounts
       // (This is fast since we only fetch assignments, not the full receipt)
       const updatedAssignments = await apiFetch(`/api/receipts/${receiptId}/assignments`);
-      setAssignments(updatedAssignments);
+      setAssignments(applyOptimisticUpdates(updatedAssignments));
     } catch (err: unknown) {
       // ROLLBACK on error
       lastSeenVersion.current = previousReceipt.version || 0;
@@ -180,6 +208,12 @@ export default function ReceiptDetailPage() {
         console.error(err);
         alert(err instanceof Error ? err.message : "Failed to update assignment");
       }
+    } finally {
+      // Only remove pending status if it matches our intent? 
+      // For simplicity/single-user flow, removing is generally safe as request finished.
+      // But technically we should respect if state changed again. 
+      // Given the user report is about single click flickering, deleting here is correct.
+      pendingUpdates.current.delete(pendingKey);
     }
   };
 

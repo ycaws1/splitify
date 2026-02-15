@@ -288,7 +288,7 @@ export default function ReceiptDetailPage() {
   // Item editing handlers
   const handleAddItem = async () => {
     try {
-      await apiFetch(`/api/receipts/${receiptId}/items`, {
+      const newItem = await apiFetch(`/api/receipts/${receiptId}/items`, {
         method: "POST",
         body: JSON.stringify({
           description: "New Item",
@@ -296,13 +296,29 @@ export default function ReceiptDetailPage() {
           quantity: 1,
         }),
       });
-      fetchReceipt();
+
+      setReceipt((prev) => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          line_items: [...prev.line_items, newItem],
+        };
+      });
     } catch (err) {
       alert("Failed to add item");
     }
   };
 
   const handleUpdateItem = async (itemId: string, field: string, value: string) => {
+    // Optimistic update
+    setReceipt((prev) => {
+      if (!prev) return null;
+      const updatedItems = prev.line_items.map((li) =>
+        li.id === itemId ? { ...li, [field]: value } : li
+      );
+      return { ...prev, line_items: updatedItems };
+    });
+
     try {
       const payload: any = {};
       if (field === "amount" || field === "quantity") {
@@ -315,9 +331,9 @@ export default function ReceiptDetailPage() {
         method: "PUT",
         body: JSON.stringify(payload),
       });
-      fetchReceipt();
     } catch (err) {
       console.error(err);
+      fetchReceipt(); // Revert/Refresh on error
     }
   };
 

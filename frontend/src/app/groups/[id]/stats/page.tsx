@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useState } from "react";
 import { useParams } from "next/navigation";
-import { apiFetch } from "@/lib/api";
+import { useCachedFetch } from "@/hooks/use-cached-fetch";
 import { getCurrencySymbol } from "@/lib/currency";
 
 interface Stats {
@@ -29,33 +29,9 @@ export default function StatsPage() {
   const params = useParams();
   const groupId = params.id as string;
   const [period, setPeriod] = useState("1mo");
-  const [stats, setStats] = useState<Stats | null>(null);
-  const [initialLoading, setInitialLoading] = useState(true);
-  const [switching, setSwitching] = useState(false);
-  const cache = useRef<Record<string, Stats>>({});
+  const { data: stats, loading } = useCachedFetch<Stats>(`/api/groups/${groupId}/stats?period=${period}`);
 
   const currencySymbol = stats ? getCurrencySymbol(stats.base_currency) : "$";
-
-  useEffect(() => {
-    // Use cached data if available
-    if (cache.current[period]) {
-      setStats(cache.current[period]);
-      setInitialLoading(false);
-      return;
-    }
-
-    setSwitching(true);
-    apiFetch(`/api/groups/${groupId}/stats?period=${period}`)
-      .then((data) => {
-        cache.current[period] = data;
-        setStats(data);
-      })
-      .catch(console.error)
-      .finally(() => {
-        setInitialLoading(false);
-        setSwitching(false);
-      });
-  }, [groupId, period]);
 
   const maxAmount = stats
     ? Math.max(...stats.spending_by_user.map((u) => parseFloat(u.amount)), 1)
@@ -83,14 +59,14 @@ export default function StatsPage() {
         ))}
       </div>
 
-      {initialLoading ? (
+      {loading ? (
         <div className="space-y-3">
           {[1, 2].map((i) => (
             <div key={i} className="h-20 animate-pulse rounded-xl bg-stone-200" />
           ))}
         </div>
       ) : stats ? (
-        <div className={switching ? "opacity-50 transition-opacity" : "transition-opacity"}>
+        <div className="transition-opacity">
           {/* Summary cards */}
           <div className="grid grid-cols-2 gap-4">
             <div className="rounded-xl border-l-4 border-l-emerald-600 bg-white p-4 text-center shadow-sm">

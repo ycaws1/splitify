@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
+import { useCachedFetch } from "@/hooks/use-cached-fetch";
 import { apiFetch } from "@/lib/api";
 import { createClient } from "@/lib/supabase/client";
 import { getCurrencySymbol } from "@/lib/currency";
@@ -21,44 +22,47 @@ interface ReceiptSummary {
 export default function ReceiptListPage() {
   const params = useParams();
   const groupId = params.id as string;
-  const [receipts, setReceipts] = useState<ReceiptSummary[]>([]);
-  const [group, setGroup] = useState<Group | null>(null);
-  const [loading, setLoading] = useState(true);
+
+  // Fetch group data separately for currency info
+  const { data: groupData } = useCachedFetch<Group>(`/api/groups/${groupId}`);
+
+  // Fetch receipts list
+  const {
+    data: receiptsData,
+    loading: receiptsLoading,
+    refetch: refetchReceipts,
+    setData: setReceiptsData
+  } = useCachedFetch<any>(`/api/groups/${groupId}/receipts`);
+
+  const [receipts, setReceipts] = useState<ReceiptSummary[]>(
+    receiptsData ? (Array.isArray(receiptsData) ? receiptsData : receiptsData.receipts || []) : []
+  );
+  const [group, setGroup] = useState<Group | null>(groupData || null);
+  const [loading, setLoading] = useState(!receiptsData);
   const [deleting, setDeleting] = useState<string | null>(null);
 
-  const isMounted = useRef(true);
+  // Track optimistically deleted IDs to prevent them from reappearing if cache is stale
+  const deletedReceiptIds = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    isMounted.current = true;
-    return () => { isMounted.current = false; };
-  }, []);
+    if (groupData) setGroup(groupData);
+  }, [groupData]);
 
-  const fetchReceipts = useCallback(async (showLoading = false, includeGroup = false) => {
-    try {
-      if (showLoading && isMounted.current) setLoading(true);
-      const url = includeGroup
-        ? `/api/groups/${groupId}/receipts?include=group`
-        : `/api/groups/${groupId}/receipts`;
-      const data = await apiFetch(url);
-      if (isMounted.current) {
-        if (includeGroup && data.receipts) {
-          setReceipts(data.receipts);
-          if (data.group) setGroup(data.group);
-        } else {
-          setReceipts(Array.isArray(data) ? data : data.receipts || []);
-        }
-        if (showLoading) setLoading(false);
-      }
-    } catch (err) {
-      console.error(err);
-      if (showLoading && isMounted.current) setLoading(false);
+  // When fresh data comes from cache/server, update state (but filter out locally deleted ones)
+  useEffect(() => {
+    if (receiptsData) {
+      const rawList = Array.isArray(receiptsData) ? receiptsData : receiptsData.receipts || [];
+      const filteredList = rawList.filter((r: ReceiptSummary) => !deletedReceiptIds.current.has(r.id));
+      setReceipts(filteredList);
+      setLoading(false);
+    } else if (receiptsLoading) {
+      // Keep existing receipts if refreshing, but if initial load (no data), show loading
+      if (receipts.length === 0) setLoading(true);
     }
-  }, [groupId]);
+  }, [receiptsData, receiptsLoading]);
 
-  // Initial load: fetch group + receipts in single call, then setup Realtime
+  // Realtime updates
   useEffect(() => {
-    fetchReceipts(true, true);
-
     const supabase = createClient();
     const channel = supabase
       .channel(`group-receipts-${groupId}`)
@@ -67,7 +71,17 @@ export default function ReceiptListPage() {
         { event: "*", schema: "public", table: "receipts", filter: `group_id=eq.${groupId}` },
         (payload: any) => {
           console.log("Realtime update received:", payload);
-          fetchReceipts(false);
+          // Immediate update for better responsiveness
+          if (payload.eventType === "UPDATE" && payload.new) {
+            setReceipts((prev) =>
+              prev.map((r) => r.id === payload.new.id ? { ...r, ...payload.new } : r)
+            );
+          } else if (payload.eventType === "INSERT" && payload.new) {
+            setReceipts((prev) => [payload.new, ...prev]);
+          } else if (payload.eventType === "DELETE" && payload.old) {
+            setReceipts((prev) => prev.filter((r) => r.id !== payload.old.id));
+          }
+          refetchReceipts();
         }
       )
       .subscribe((status: string) => {
@@ -77,7 +91,7 @@ export default function ReceiptListPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [groupId, fetchReceipts]);
+  }, [groupId, refetchReceipts]);
 
   // Polling fallback
   useEffect(() => {
@@ -86,11 +100,11 @@ export default function ReceiptListPage() {
 
     const interval = setInterval(() => {
       console.log("Polling for updates...");
-      fetchReceipts(false);
+      refetchReceipts();
     }, 4000);
 
     return () => clearInterval(interval);
-  }, [receipts, fetchReceipts]);
+  }, [receipts, refetchReceipts]);
 
   const handleDelete = async (e: React.MouseEvent, receiptId: string) => {
     e.preventDefault(); // Prevent navigation
@@ -100,13 +114,27 @@ export default function ReceiptListPage() {
 
     // Optimistic: remove from UI immediately
     const previousReceipts = receipts;
-    setReceipts(receipts.filter(r => r.id !== receiptId));
+    const newReceipts = receipts.filter(r => r.id !== receiptId);
+    setReceipts(newReceipts);
+    deletedReceiptIds.current.add(receiptId);
+
+    // Also update the cached data source so useEffect doesn't revert it if it runs
+    if (receiptsData) {
+      if (Array.isArray(receiptsData)) {
+        setReceiptsData(newReceipts);
+      } else {
+        setReceiptsData({ ...receiptsData, receipts: newReceipts });
+      }
+    }
+
     try {
       await apiFetch(`/api/receipts/${receiptId}`, { method: "DELETE" });
     } catch (error) {
       console.error("Failed to delete receipt:", error);
       alert("Failed to delete receipt");
-      setReceipts(previousReceipts); // rollback on error
+      // Rollback
+      setReceipts(previousReceipts);
+      if (receiptsData) setReceiptsData(receiptsData);
     }
   };
 
@@ -158,7 +186,7 @@ export default function ReceiptListPage() {
               <button
                 onClick={(e) => handleDelete(e, r.id)}
                 disabled={deleting === r.id}
-                className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-rose-500 text-white hover:bg-rose-600 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-sm font-bold shadow-md disabled:opacity-50"
+                className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-rose-500 text-white hover:bg-rose-600 flex items-center justify-center text-sm font-bold shadow-md disabled:opacity-50"
                 title="Delete receipt"
               >
                 ×

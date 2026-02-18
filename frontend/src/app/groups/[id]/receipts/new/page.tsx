@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { apiFetch } from "@/lib/api";
+import { invalidateCache } from "@/hooks/use-cached-fetch";
 import { COMMON_CURRENCIES, getCurrencySymbol } from "@/lib/currency";
 import type { Group } from "@/types";
 
@@ -95,6 +96,8 @@ export default function NewReceiptPage() {
         body: JSON.stringify({ image_url: urlData.publicUrl, currency: uploadCurrency || undefined }),
       });
 
+      // Force refresh of receipts list
+      invalidateCache(`/api/groups/${groupId}/receipts`);
       router.push(`/groups/${groupId}/receipts`);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Upload failed");
@@ -143,6 +146,9 @@ export default function NewReceiptPage() {
           })),
         }),
       });
+
+      // Force refresh of receipts list
+      invalidateCache(`/api/groups/${groupId}/receipts`);
       router.push(`/receipts/${receipt.id}`);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to create receipt");

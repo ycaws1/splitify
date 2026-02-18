@@ -1,13 +1,14 @@
 import uuid
+from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
 from app.core.database import get_db
 from app.models.user import User
 from app.schemas.receipt import (
-    ReceiptCreate, ManualReceiptCreate, ReceiptResponse, ReceiptUpdate, ReceiptListResponse,
+    ReceiptCreate, ManualReceiptCreate, ReceiptResponse, ReceiptDetailResponse, ReceiptUpdate, ReceiptListResponse,
     LineItemCreate, LineItemUpdate, LineItemResponse,
 )
 from app.services.receipt_service import (
@@ -69,25 +70,59 @@ async def create_manual(
     return receipt
 
 
-@router.get("/api/groups/{group_id}/receipts", response_model=list[ReceiptListResponse])
+@router.get("/api/groups/{group_id}/receipts")
 async def list_group_receipts(
     group_id: uuid.UUID,
+    include: Optional[str] = Query(None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    includes = set(include.split(",")) if include else set()
+
+    if "group" in includes:
+        from app.services.group_service import get_group as _get_group
+        from app.schemas.group import GroupResponse
+        receipts = await list_receipts(db, group_id)
+        group = await _get_group(db, group_id)
+        return {
+            "receipts": [ReceiptListResponse.model_validate(r, from_attributes=True) for r in receipts],
+            "group": GroupResponse.model_validate(group, from_attributes=True).model_dump(mode="json") if group else None,
+        }
+
     return await list_receipts(db, group_id)
 
 
-@router.get("/api/receipts/{receipt_id}", response_model=ReceiptResponse)
+@router.get("/api/receipts/{receipt_id}", response_model=ReceiptDetailResponse)
 async def get_receipt_detail(
     receipt_id: uuid.UUID,
+    include: Optional[str] = Query(None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     receipt = await get_receipt(db, receipt_id)
     if not receipt:
         raise HTTPException(status_code=404, detail="Receipt not found")
-    return receipt
+
+    includes = set(include.split(",")) if include else set()
+    result = ReceiptDetailResponse.model_validate(receipt, from_attributes=True)
+
+    if "group" in includes or "payments" in includes:
+        from app.services.group_service import get_group as _get_group
+        from app.schemas.group import GroupResponse
+        from app.services.payment_service import get_receipt_payments
+
+        updates = {}
+        if "group" in includes:
+            group_result = await _get_group(db, receipt.group_id)
+            if group_result:
+                updates["group"] = GroupResponse.model_validate(group_result, from_attributes=True).model_dump(mode="json")
+        if "payments" in includes:
+            payments_result = await get_receipt_payments(db, receipt_id)
+            if payments_result:
+                updates["payments"] = payments_result
+        result = result.model_copy(update=updates)
+
+    return result
 
 
 @router.put("/api/receipts/{receipt_id}", response_model=ReceiptResponse)

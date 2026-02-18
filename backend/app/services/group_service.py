@@ -2,6 +2,7 @@ import uuid
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 
 from app.models.group import Group, GroupMember, GroupRole
 from app.models.user import User
@@ -30,15 +31,27 @@ async def list_user_groups(db: AsyncSession, user_id: uuid.UUID):
 
 
 async def get_group(db: AsyncSession, group_id: uuid.UUID) -> Group | None:
-    result = await db.execute(select(Group).where(Group.id == group_id))
-    return result.scalar_one_or_none()
+    result = await db.execute(
+        select(Group)
+        .where(Group.id == group_id)
+        .options(joinedload(Group.members).joinedload(GroupMember.user))
+    )
+    return result.unique().scalar_one_or_none()
 
 
-async def update_group(db: AsyncSession, group_id: uuid.UUID, base_currency: str) -> Group | None:
+async def update_group(
+    db: AsyncSession,
+    group_id: uuid.UUID,
+    name: str | None = None,
+    base_currency: str | None = None,
+) -> Group | None:
     group = await db.get(Group, group_id)
     if not group:
         return None
-    group.base_currency = base_currency.upper()
+    if name is not None:
+        group.name = name.strip()
+    if base_currency is not None:
+        group.base_currency = base_currency.upper()
     await db.commit()
     await db.refresh(group)
     return group

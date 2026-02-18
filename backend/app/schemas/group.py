@@ -9,7 +9,8 @@ class GroupCreate(BaseModel):
 
 
 class GroupUpdate(BaseModel):
-    base_currency: str
+    name: str | None = None
+    base_currency: str | None = None
 
 
 class MemberResponse(BaseModel):
@@ -37,6 +38,13 @@ class GroupListResponse(BaseModel):
     name: str
     base_currency: str
     created_at: datetime
+
+
+class GroupDetailResponse(GroupResponse):
+    """GroupResponse + optional embedded balances."""
+    balances: list | None = None
+    total_assigned: str | None = None
+    total_paid: str | None = None
 
 
 class InviteResponse(BaseModel):

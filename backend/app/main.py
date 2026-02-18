@@ -1,4 +1,5 @@
 import asyncio
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -36,6 +37,36 @@ from app.core.config import settings
 
 cors_origins = settings.cors_origins.split(",")
 
+from starlette.types import ASGIApp, Receive, Scope, Send
+
+class TimingMiddleware:
+    """Lightweight ASGI middleware — no BaseHTTPMiddleware overhead."""
+    def __init__(self, app: ASGIApp):
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+
+        t0 = time.perf_counter()
+        status_code = 0
+
+        async def send_wrapper(message):
+            nonlocal status_code
+            if message["type"] == "http.response.start":
+                status_code = message["status"]
+            await send(message)
+
+        await self.app(scope, receive, send_wrapper)
+        ms = int((time.perf_counter() - t0) * 1000)
+        method = scope.get("method", "?")
+        path = scope.get("path", "?")
+        qs = scope.get("query_string", b"").decode()
+        qs_str = f"?{qs}" if qs else ""
+        print(f"TIMING: {method} {path}{qs_str} -> {status_code} in {ms}ms")
+
+
+app.add_middleware(TimingMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,

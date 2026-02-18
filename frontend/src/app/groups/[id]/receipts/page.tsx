@@ -26,10 +26,6 @@ export default function ReceiptListPage() {
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<string | null>(null);
 
-  useEffect(() => {
-    apiFetch(`/api/groups/${groupId}`).then(setGroup).catch(console.error);
-  }, [groupId]);
-
   const isMounted = useRef(true);
 
   useEffect(() => {
@@ -37,12 +33,20 @@ export default function ReceiptListPage() {
     return () => { isMounted.current = false; };
   }, []);
 
-  const fetchReceipts = useCallback(async (showLoading = false) => {
+  const fetchReceipts = useCallback(async (showLoading = false, includeGroup = false) => {
     try {
       if (showLoading && isMounted.current) setLoading(true);
-      const data = await apiFetch(`/api/groups/${groupId}/receipts`);
+      const url = includeGroup
+        ? `/api/groups/${groupId}/receipts?include=group`
+        : `/api/groups/${groupId}/receipts`;
+      const data = await apiFetch(url);
       if (isMounted.current) {
-        setReceipts(data);
+        if (includeGroup && data.receipts) {
+          setReceipts(data.receipts);
+          if (data.group) setGroup(data.group);
+        } else {
+          setReceipts(Array.isArray(data) ? data : data.receipts || []);
+        }
         if (showLoading) setLoading(false);
       }
     } catch (err) {
@@ -51,9 +55,9 @@ export default function ReceiptListPage() {
     }
   }, [groupId]);
 
-  // Initial load & Realtime
+  // Initial load: fetch group + receipts in single call, then setup Realtime
   useEffect(() => {
-    fetchReceipts(true);
+    fetchReceipts(true, true);
 
     const supabase = createClient();
     const channel = supabase
@@ -94,15 +98,15 @@ export default function ReceiptListPage() {
 
     if (!confirm("Delete this receipt?")) return;
 
-    setDeleting(receiptId);
+    // Optimistic: remove from UI immediately
+    const previousReceipts = receipts;
+    setReceipts(receipts.filter(r => r.id !== receiptId));
     try {
       await apiFetch(`/api/receipts/${receiptId}`, { method: "DELETE" });
-      setReceipts(receipts.filter(r => r.id !== receiptId));
     } catch (error) {
       console.error("Failed to delete receipt:", error);
       alert("Failed to delete receipt");
-    } finally {
-      setDeleting(null);
+      setReceipts(previousReceipts); // rollback on error
     }
   };
 

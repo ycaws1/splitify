@@ -3,7 +3,12 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { QRCodeSVG } from "qrcode.react";
+import dynamic from "next/dynamic";
+
+const QRCodeSVG = dynamic(
+  () => import("qrcode.react").then((mod) => mod.QRCodeSVG),
+  { loading: () => <div className="h-[160px] w-[160px] animate-pulse rounded bg-stone-200" /> }
+);
 import { apiFetch } from "@/lib/api";
 import { getCurrencySymbol, COMMON_CURRENCIES } from "@/lib/currency";
 import type { Group, BalanceEntry } from "@/types";
@@ -20,6 +25,8 @@ export default function GroupDetailPage() {
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
   const [settling, setSettling] = useState<string | null>(null);
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editName, setEditName] = useState("");
 
   const handleSettle = async (b: BalanceEntry) => {
     const sym = group ? getCurrencySymbol(group.base_currency) : "$";
@@ -58,21 +65,35 @@ export default function GroupDetailPage() {
   };
 
   useEffect(() => {
-    Promise.all([
-      apiFetch(`/api/groups/${groupId}`),
-      apiFetch(`/api/groups/${groupId}/balances`),
-    ])
-      .then(([g, b]) => {
-        setGroup(g);
-        setBalances(b.balances);
-        setTotalAssigned(b.total_assigned || "0");
-        setTotalPaid(b.total_paid || "0");
+    let cancelled = false;
+    apiFetch(`/api/groups/${groupId}?include=balances`)
+      .then((data) => {
+        if (cancelled) return;
+        setGroup(data);
+        setBalances(data.balances ?? []);
+        setTotalAssigned(data.total_assigned ?? "0");
+        setTotalPaid(data.total_paid ?? "0");
       })
-      .catch(console.error)
-      .finally(() => setLoading(false));
+      .catch((err) => { if (!cancelled) console.error(err); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [groupId]);
 
-  if (loading) return <p className="p-6 text-stone-500">Loading...</p>;
+  if (loading) return (
+    <div className="mx-auto max-w-2xl px-4 py-6 space-y-6">
+      <div className="flex items-center justify-between">
+        <div className="h-8 w-40 animate-pulse rounded-lg bg-stone-200" />
+        <div className="h-10 w-24 animate-pulse rounded-xl bg-stone-200" />
+      </div>
+      <div className="h-20 animate-pulse rounded-2xl bg-stone-200" />
+      <div className="space-y-2">
+        <div className="h-6 w-28 animate-pulse rounded bg-stone-200" />
+        {[1, 2].map((i) => (
+          <div key={i} className="h-14 animate-pulse rounded-xl bg-stone-200" />
+        ))}
+      </div>
+    </div>
+  );
   if (!group) return <p className="p-6 text-rose-500">Group not found</p>;
 
   const inviteUrl = typeof window !== "undefined"
@@ -82,7 +103,51 @@ export default function GroupDetailPage() {
   return (
       <div className="mx-auto max-w-2xl px-4 py-6 space-y-6">
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-stone-900">{group.name}</h1>
+          {isEditingName ? (
+            <form
+              className="flex items-center gap-2"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                const trimmed = editName.trim();
+                if (!trimmed || trimmed === group.name) {
+                  setIsEditingName(false);
+                  return;
+                }
+                try {
+                  const updated = await apiFetch(`/api/groups/${groupId}`, {
+                    method: "PUT",
+                    body: JSON.stringify({ name: trimmed }),
+                  });
+                  setGroup(updated);
+                  setIsEditingName(false);
+                } catch (err: unknown) {
+                  alert(err instanceof Error ? err.message : "Failed to rename group");
+                }
+              }}
+            >
+              <input
+                autoFocus
+                type="text"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                className="rounded-lg border border-stone-300 px-2 py-1 text-2xl font-bold text-stone-900 focus:border-emerald-600 focus:outline-none"
+              />
+              <button type="submit" className="rounded-lg bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800">
+                Save
+              </button>
+              <button type="button" onClick={() => setIsEditingName(false)} className="rounded-lg px-3 py-1.5 text-sm font-medium text-stone-500 hover:bg-stone-100">
+                Cancel
+              </button>
+            </form>
+          ) : (
+            <h1
+              className="text-2xl font-bold text-stone-900 cursor-pointer hover:text-emerald-800 transition-colors"
+              onClick={() => { setEditName(group.name); setIsEditingName(true); }}
+              title="Click to rename"
+            >
+              {group.name}
+            </h1>
+          )}
           <Link
             href={`/groups/${groupId}/receipts`}
             className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-800"

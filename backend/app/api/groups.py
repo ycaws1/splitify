@@ -1,12 +1,13 @@
 import uuid
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
 from app.core.database import get_db
 from app.models.user import User
-from app.schemas.group import GroupCreate, GroupUpdate, GroupResponse, GroupListResponse, InviteResponse
+from app.schemas.group import GroupCreate, GroupUpdate, GroupResponse, GroupDetailResponse, GroupListResponse, InviteResponse
 from app.services.group_service import create_group, list_user_groups, get_group, update_group, join_group_by_code, delete_group
 
 router = APIRouter(prefix="/api/groups", tags=["groups"])
@@ -30,12 +31,29 @@ async def list_groups(
     return await list_user_groups(db, user.id)
 
 
-@router.get("/{group_id}", response_model=GroupResponse)
+@router.get("/{group_id}", response_model=GroupDetailResponse)
 async def get(
     group_id: uuid.UUID,
+    include: Optional[str] = Query(None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    if include and "balances" in include.split(","):
+        from app.services.settlement_service import calculate_balances
+
+        group = await get_group(db, group_id)
+        if not group:
+            raise HTTPException(status_code=404, detail="Group not found")
+        members_map = {m.user_id: m.display_name for m in group.members}
+        bal = await calculate_balances(db, group_id, user_names=members_map)
+        return GroupDetailResponse.model_validate(
+            group, from_attributes=True
+        ).model_copy(update={
+            "balances": bal["balances"],
+            "total_assigned": str(bal.get("total_assigned", "0")),
+            "total_paid": str(bal.get("total_paid", "0")),
+        })
+
     group = await get_group(db, group_id)
     if not group:
         raise HTTPException(status_code=404, detail="Group not found")
@@ -49,7 +67,7 @@ async def update(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    group = await update_group(db, group_id, body.base_currency)
+    group = await update_group(db, group_id, name=body.name, base_currency=body.base_currency)
     if not group:
         raise HTTPException(status_code=404, detail="Group not found")
     return group

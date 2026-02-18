@@ -69,13 +69,7 @@ export default function ReceiptDetailPage() {
 
   const fetchReceipt = useCallback(async () => {
     try {
-      // If we already know the group_id, fetch receipt and group in parallel
-      const receiptPromise = apiFetch(`/api/receipts/${receiptId}`);
-      const groupPromise = groupIdRef.current
-        ? apiFetch(`/api/groups/${groupIdRef.current}`)
-        : null;
-
-      const r = await receiptPromise;
+      const r = await apiFetch(`/api/receipts/${receiptId}?include=group,payments`);
       setReceipt(r);
       if (r.version > lastSeenVersion.current) {
         lastSeenVersion.current = r.version;
@@ -85,15 +79,15 @@ export default function ReceiptDetailPage() {
       const allAssignments = r.line_items.flatMap((li: { assignments: Assignment[] }) => li.assignments || []);
       setAssignments(applyOptimisticUpdates(allAssignments));
 
-      // Fetch group members and payments
-      const [g, p] = await Promise.all([
-        groupPromise || apiFetch(`/api/groups/${r.group_id}`),
-        apiFetch(`/api/receipts/${receiptId}/payments`),
-      ]);
-      groupIdRef.current = r.group_id;
-      setGroup(g);
-      setMembers(g.members);
-      setPayments(p);
+      // Group and payments are embedded in the response
+      if (r.group) {
+        groupIdRef.current = r.group_id;
+        setGroup(r.group);
+        setMembers(r.group.members);
+      }
+      if (r.payments) {
+        setPayments(r.payments);
+      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -101,8 +95,11 @@ export default function ReceiptDetailPage() {
     }
   }, [receiptId, applyOptimisticUpdates]);
 
+  const isMounted = useRef(true);
   useEffect(() => {
+    isMounted.current = true;
     fetchReceipt();
+    return () => { isMounted.current = false; };
   }, [fetchReceipt]);
 
   // Realtime subscription for receipt updates (from OTHER users)
@@ -233,26 +230,33 @@ export default function ReceiptDetailPage() {
       return;
     }
     setPayError(null);
+
+    // Optimistic: update UI immediately
+    const payer = members.find(m => m.user_id === payUserId);
+    const tempPayment = {
+      id: `temp-${Date.now()}`,
+      receipt_id: receiptId,
+      paid_by: payUserId,
+      payer_name: payer?.display_name || "Unknown",
+      amount: amount.toFixed(2),
+    };
+    const previousPayments = payments;
+    setPayments([...payments, tempPayment]);
+    setPayAmount("");
+    setPayUserId("");
+
     try {
       const newPayment = await apiFetch(`/api/receipts/${receiptId}/payments`, {
         method: "POST",
-        body: JSON.stringify({
-          paid_by: payUserId,
-          amount,
-        }),
+        body: JSON.stringify({ paid_by: tempPayment.paid_by, amount }),
       });
-      setPayAmount("");
-      setPayUserId("");
-      // Optimistically add to list (backend should return full object with payer_name ideally,
-      // but if payer_name missing we can find it from members list)
-      const payer = members.find(m => m.user_id === newPayment.paid_by);
-      const paymentWithInfo = {
-        ...newPayment,
-        payer_name: newPayment.payer_name || payer?.display_name || "Unknown",
-      };
-      setPayments([...payments, paymentWithInfo]);
+      // Replace temp with real server response
+      setPayments((prev) => prev.map((p) =>
+        p.id === tempPayment.id ? { ...newPayment, payer_name: newPayment.payer_name || tempPayment.payer_name } : p
+      ));
     } catch (err: unknown) {
       setPayError(err instanceof Error ? err.message : "Failed to record payment");
+      setPayments(previousPayments); // rollback
     }
   };
 

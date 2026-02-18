@@ -3,7 +3,7 @@ from decimal import Decimal, ROUND_HALF_UP
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, joinedload, noload
 
 from app.models.receipt import Receipt, LineItem, LineItemAssignment, ReceiptStatus
 from app.models.group import GroupMember
@@ -11,9 +11,12 @@ from app.models.user import User
 
 
 def _receipt_load_options():
-    """Eager-load line_items -> assignments for ReceiptResponse serialization."""
+    """Eager-load line_items -> assignments -> user in a single joined query."""
     return [
-        selectinload(Receipt.line_items).selectinload(LineItem.assignments),
+        joinedload(Receipt.line_items)
+            .joinedload(LineItem.assignments)
+            .joinedload(LineItemAssignment.user),
+        joinedload(Receipt.uploader),
     ]
 
 
@@ -32,7 +35,7 @@ async def create_receipt(
     result = await db.execute(
         select(Receipt).options(*_receipt_load_options()).where(Receipt.id == receipt.id)
     )
-    return result.scalar_one()
+    return result.unique().scalar_one()
 
 
 async def create_manual_receipt(
@@ -138,23 +141,41 @@ async def create_manual_receipt(
     result = await db.execute(
         select(Receipt).options(*_receipt_load_options()).where(Receipt.id == receipt.id)
     )
-    return result.scalar_one()
+    return result.unique().scalar_one()
 
 
 async def list_receipts(db: AsyncSession, group_id: uuid.UUID) -> list[Receipt]:
     result = await db.execute(
         select(Receipt)
+        .options(noload(Receipt.line_items), noload(Receipt.uploader))
         .where(Receipt.group_id == group_id)
         .order_by(Receipt.created_at.desc())
     )
     return list(result.scalars().all())
 
 
+async def list_processing_receipts(db: AsyncSession, user_id: uuid.UUID) -> list[Receipt]:
+    """List all processing/failed receipts across all groups the user belongs to."""
+    from app.models.group import GroupMember, Group
+    result = await db.execute(
+        select(Receipt, Group.name.label("group_name"))
+        .options(noload(Receipt.line_items), noload(Receipt.uploader))
+        .join(Group, Group.id == Receipt.group_id)
+        .join(GroupMember, GroupMember.group_id == Group.id)
+        .where(
+            GroupMember.user_id == user_id,
+            Receipt.status.in_(["processing", "failed"]),
+        )
+        .order_by(Receipt.created_at.desc())
+    )
+    return result.all()
+
+
 async def get_receipt(db: AsyncSession, receipt_id: uuid.UUID) -> Receipt | None:
     result = await db.execute(
         select(Receipt).options(*_receipt_load_options()).where(Receipt.id == receipt_id)
     )
-    return result.scalar_one_or_none()
+    return result.unique().scalar_one_or_none()
 
 
 from app.services.exchange_rate_service import get_exchange_rate
@@ -230,7 +251,7 @@ async def delete_receipt(db: AsyncSession, receipt_id: uuid.UUID) -> bool:
 async def add_line_item(db: AsyncSession, receipt_id: uuid.UUID, description: str, amount: Decimal, quantity: Decimal) -> LineItem:
     # Get receipt to check it exists
     result = await db.execute(select(Receipt).options(*_receipt_load_options()).where(Receipt.id == receipt_id))
-    receipt = result.scalar_one_or_none()
+    receipt = result.unique().scalar_one_or_none()
     if not receipt:
         return None
     
@@ -298,10 +319,10 @@ async def update_line_item(db: AsyncSession, item_id: uuid.UUID, data: dict) -> 
     # Re-fetch to ensure assignments are loaded and item is fresh
     result = await db.execute(
         select(LineItem)
-        .options(selectinload(LineItem.assignments))
+        .options(joinedload(LineItem.assignments).joinedload(LineItemAssignment.user))
         .where(LineItem.id == item_id)
     )
-    return result.scalar_one()
+    return result.unique().scalar_one()
 
 
 async def delete_line_item(db: AsyncSession, item_id: uuid.UUID) -> bool:

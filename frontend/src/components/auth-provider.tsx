@@ -22,17 +22,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const supabase = createClient();
 
   useEffect(() => {
+    // Only update state when the user actually changes (avoid duplicate re-renders)
+    const updateSession = (newSession: Session | null) => {
+      setSession((prev) => {
+        if (prev?.user?.id === newSession?.user?.id && prev?.access_token === newSession?.access_token) {
+          return prev; // same session, skip re-render
+        }
+        return newSession;
+      });
+      setLoading(false);
+    };
+
     // Get initial session
     supabase.auth.getSession().then(({ data }: { data: { session: Session | null } }) => {
-      setSession(data.session);
-      setLoading(false);
+      updateSession(data.session);
     });
 
     // Listen for changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (_event: AuthChangeEvent, session: Session | null) => {
-        setSession(session);
-        setLoading(false);
+        updateSession(session);
       }
     );
 

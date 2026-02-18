@@ -75,6 +75,12 @@ class ReceiptResponse(BaseModel):
     line_items: list[LineItemResponse] = []
 
 
+class ReceiptDetailResponse(ReceiptResponse):
+    """ReceiptResponse + optional embedded group and payments."""
+    group: dict | None = None
+    payments: list | None = None
+
+
 class ReceiptUpdate(BaseModel):
     merchant_name: str | None = None
     receipt_date: date | None = None

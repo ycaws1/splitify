@@ -6,6 +6,7 @@ class CachingDisabledConnection(asyncpg.Connection):
     def _get_unique_id(self, prefix: str) -> str:
         return f"__asyncpg_{uuid.uuid4()}__"
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.pool import NullPool
 
 from app.core.config import settings
 
@@ -20,16 +21,13 @@ def _get_async_url(url: str) -> str:
 
 _db_url = _get_async_url(settings.database_url)
 
-# Use a connection pool instead of NullPool to reuse TCP+TLS connections.
-# With remote Supabase, connection setup is ~500-1000ms — pooling avoids this per-request.
-# pgBouncer compatibility is handled by statement_cache_size=0 + CachingDisabledConnection.
+# NullPool required for Supabase pgBouncer (transaction mode) — pgBouncer handles
+# connection pooling server-side. SQLAlchemy-level pooling conflicts with pgBouncer
+# because pooled connections get reassigned, invalidating prepared statements.
 engine = create_async_engine(
     _db_url,
     echo=False,
-    pool_size=5,
-    max_overflow=5,
-    pool_recycle=300,
-    pool_pre_ping=True,
+    poolclass=NullPool,
     connect_args={
         "statement_cache_size": 0,
         "connection_class": CachingDisabledConnection,

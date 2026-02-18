@@ -98,6 +98,7 @@ export default function NewReceiptPage() {
 
       // Force refresh of receipts list
       invalidateCache(`/api/groups/${groupId}/receipts`);
+      invalidateCache(`/api/groups/${groupId}?include=balances`);
       router.push(`/groups/${groupId}/receipts`);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Upload failed");
@@ -149,6 +150,7 @@ export default function NewReceiptPage() {
 
       // Force refresh of receipts list
       invalidateCache(`/api/groups/${groupId}/receipts`);
+      invalidateCache(`/api/groups/${groupId}?include=balances`);
       router.push(`/receipts/${receipt.id}`);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to create receipt");

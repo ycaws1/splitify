@@ -4,6 +4,7 @@ import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { apiFetch } from "@/lib/api";
+import { invalidateCache } from "@/hooks/use-cached-fetch";
 import { getCurrencySymbol } from "@/lib/currency";
 import type { Receipt, Assignment, GroupMember, Group } from "@/types";
 
@@ -152,23 +153,21 @@ export default function ReceiptDetailPage() {
     // Update pending map
     pendingUpdates.current.set(pendingKey, wasAssigned ? 'remove' : 'add');
 
-    if (wasAssigned) {
-      // Remove from UI
-      setAssignments(assignments.filter(
-        (a) => !(a.line_item_id === lineItemId && a.user_id === userId)
-      ));
-    } else {
-      // Add to UI (with placeholder data that will be replaced by server response)
-      setAssignments([
-        ...assignments,
-        {
-          id: 'temp-' + Date.now(), // temporary ID
-          line_item_id: lineItemId,
-          user_id: userId,
-          share_amount: "0.00", // Will be calculated by server
-        },
-      ]);
-    }
+    setAssignments((prev) => {
+      if (wasAssigned) {
+        return prev.filter((a) => !(a.line_item_id === lineItemId && a.user_id === userId));
+      } else {
+        return [
+          ...prev,
+          {
+            id: 'temp-' + Date.now() + Math.random(), // unique temp ID
+            line_item_id: lineItemId,
+            user_id: userId,
+            share_amount: "0.00",
+          },
+        ];
+      }
+    });
 
     // Mark version as seen optimistically
     const nextVersion = (receipt.version || 0) + 1;
@@ -187,7 +186,7 @@ export default function ReceiptDetailPage() {
       });
 
       // Update version from server response
-      setReceipt({ ...receipt, version: result.new_version });
+      setReceipt((prev) => prev ? { ...prev, version: result.new_version } : null);
 
       // Refresh assignments from server to get correct share amounts
       // (This is fast since we only fetch assignments, not the full receipt)
@@ -212,7 +211,29 @@ export default function ReceiptDetailPage() {
       // But technically we should respect if state changed again. 
       // Given the user report is about single click flickering, deleting here is correct.
       pendingUpdates.current.delete(pendingKey);
+      if (receipt) invalidateCache(`/api/groups/${receipt.group_id}?include=balances`);
     }
+  };
+
+  const handleAssignAll = async (lineItemId: string) => {
+    // Check if everyone is currently assigned
+    const memberIds = members.map(m => m.user_id);
+    const assignedIds = assignments
+      .filter(a => a.line_item_id === lineItemId)
+      .map(a => a.user_id);
+
+    const allAssigned = memberIds.every(id => assignedIds.includes(id));
+    const targetAssigned = !allAssigned;
+
+    // Trigger toggles for those who don't match target state
+    const promises = [];
+    for (const m of members) {
+      const isAssigned = assignedIds.includes(m.user_id);
+      if (isAssigned !== targetAssigned) {
+        promises.push(toggleAssignment(lineItemId, m.user_id));
+      }
+    }
+    await Promise.all(promises);
   };
 
   // Payment totals
@@ -254,6 +275,7 @@ export default function ReceiptDetailPage() {
       setPayments((prev) => prev.map((p) =>
         p.id === tempPayment.id ? { ...newPayment, payer_name: newPayment.payer_name || tempPayment.payer_name } : p
       ));
+      if (receipt) invalidateCache(`/api/groups/${receipt.group_id}?include=balances`);
     } catch (err: unknown) {
       setPayError(err instanceof Error ? err.message : "Failed to record payment");
       setPayments(previousPayments); // rollback
@@ -290,6 +312,7 @@ export default function ReceiptDetailPage() {
     setDeleting(true);
     try {
       await apiFetch(`/api/receipts/${receiptId}`, { method: "DELETE" });
+      invalidateCache(`/api/groups/${receipt.group_id}?include=balances`);
       router.push(`/groups/${receipt.group_id}/receipts`);
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : "Failed to delete");
@@ -412,6 +435,7 @@ export default function ReceiptDetailPage() {
     if (!confirm("Delete this item?")) return;
     try {
       await apiFetch(`/api/items/${itemId}`, { method: "DELETE" });
+      if (receipt) invalidateCache(`/api/groups/${receipt.group_id}?include=balances`);
       fetchReceipt();
     } catch (err) {
       alert("Failed to delete item");
@@ -685,6 +709,16 @@ export default function ReceiptDetailPage() {
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={() => handleAssignAll(li.id)}
+                        className={`rounded-full px-3 py-1 text-xs font-bold transition-colors ${members.every(m => isAssigned(li.id, m.user_id))
+                            ? "bg-emerald-700 text-white"
+                            : "bg-white border border-stone-300 text-stone-600 hover:bg-stone-100"
+                          }`}
+                        title={members.every(m => isAssigned(li.id, m.user_id)) ? "Unselect All" : "Select All"}
+                      >
+                        All
+                      </button>
                       {members.map((m) => (
                         <button
                           key={m.user_id}

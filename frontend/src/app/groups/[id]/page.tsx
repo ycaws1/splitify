@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { useCachedFetch } from "@/hooks/use-cached-fetch";
+import { useCachedFetch, invalidateCache } from "@/hooks/use-cached-fetch";
 
 const QRCodeSVG = dynamic(
   () => import("qrcode.react").then((mod) => mod.QRCodeSVG),
@@ -43,7 +43,8 @@ export default function GroupDetailPage() {
           amount: parseFloat(b.amount),
         }),
       });
-      // Refresh balances
+      // Refresh balances (invalidate cache first to ensure fresh data)
+      invalidateCache(`/api/groups/${groupId}?include=balances`);
       const updated = await apiFetch(`/api/groups/${groupId}/balances`);
       setBalances(updated.balances);
     } catch (err: unknown) {

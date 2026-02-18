@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { useCachedFetch } from "@/hooks/use-cached-fetch";
+import { useCachedFetch, invalidateCache } from "@/hooks/use-cached-fetch";
 import { apiFetch } from "@/lib/api";
 import { createClient } from "@/lib/supabase/client";
 import { getCurrencySymbol } from "@/lib/currency";
@@ -129,6 +129,7 @@ export default function ReceiptListPage() {
 
     try {
       await apiFetch(`/api/receipts/${receiptId}`, { method: "DELETE" });
+      invalidateCache(`/api/groups/${groupId}?include=balances`);
     } catch (error) {
       console.error("Failed to delete receipt:", error);
       alert("Failed to delete receipt");

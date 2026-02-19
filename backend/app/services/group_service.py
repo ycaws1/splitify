@@ -96,3 +96,40 @@ async def join_group_by_code(db: AsyncSession, invite_code: str, user: User) -> 
     await db.commit()
     await db.refresh(group)
     return group
+
+
+async def reset_group_data(db: AsyncSession, group_id: uuid.UUID) -> dict:
+    from app.models.receipt import Receipt, LineItem, LineItemAssignment
+    from app.models.payment import Payment, Settlement
+    from sqlalchemy import delete
+
+    # Get receipt IDs for this group first
+    receipt_ids_result = await db.execute(
+        select(Receipt.id).where(Receipt.group_id == group_id)
+    )
+    receipt_ids = [row[0] for row in receipt_ids_result.all()]
+    count = len(receipt_ids)
+
+    if receipt_ids:
+        # Delete dependents explicitly before receipts to satisfy FK constraints.
+        # (lazy="noload" on relationships means ORM cascade won't fire automatically.)
+        line_item_ids_result = await db.execute(
+            select(LineItem.id).where(LineItem.receipt_id.in_(receipt_ids))
+        )
+        line_item_ids = [row[0] for row in line_item_ids_result.all()]
+
+        if line_item_ids:
+            await db.execute(delete(LineItemAssignment).where(LineItemAssignment.line_item_id.in_(line_item_ids)))
+
+        await db.execute(delete(Payment).where(Payment.receipt_id.in_(receipt_ids)))
+        await db.execute(delete(LineItem).where(LineItem.receipt_id.in_(receipt_ids)))
+        await db.execute(delete(Receipt).where(Receipt.id.in_(receipt_ids)))
+
+    await db.execute(delete(Settlement).where(Settlement.group_id == group_id))
+
+    await db.commit()
+
+    return {
+        "receipts_deleted": count,
+        "settlements_deleted": 0,  # not tracking separately
+    }

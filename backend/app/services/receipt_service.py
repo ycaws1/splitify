@@ -8,6 +8,7 @@ from sqlalchemy.orm import selectinload, joinedload, noload
 from app.models.receipt import Receipt, LineItem, LineItemAssignment, ReceiptStatus
 from app.models.group import GroupMember
 from app.models.user import User
+from app.utils.currency_utils import compute_shares
 
 
 def _receipt_load_options():
@@ -127,10 +128,8 @@ async def create_manual_receipt(
         num_members = len(member_ids)
         if num_members > 0:
             for li in shared_line_items:
-                share = (li.amount / Decimal(num_members)).quantize(
-                    Decimal("0.01"), rounding=ROUND_HALF_UP
-                )
-                for uid in member_ids:
+                shares = compute_shares(li.amount, member_ids, seed=str(li.id))
+                for uid, share in shares.items():
                     db.add(LineItemAssignment(
                         line_item_id=li.id,
                         user_id=uid,
@@ -182,7 +181,7 @@ from app.services.exchange_rate_service import get_exchange_rate
 from app.models.group import Group
 
 async def update_receipt(
-    db: AsyncSession, receipt_id: uuid.UUID, data: dict, expected_version: int
+    db: AsyncSession, receipt_id: uuid.UUID, data: dict, expected_version: int | None
 ) -> Receipt | None:
     """Update receipt with optimistic locking. Returns None if version conflict."""
     # Check if currency is changing
@@ -207,11 +206,18 @@ async def update_receipt(
                 # But here valid currency is expected.
                 pass
 
+    stmt = update(Receipt).where(Receipt.id == receipt_id)
+    
+    if expected_version is not None:
+        stmt = stmt.where(Receipt.version == expected_version)
+        values = {**data, "version": expected_version + 1}
+    else:
+        # Force update: verify receipt exists first (implicit in update count, but returning deals with it)
+        # Just increment version atomically
+        values = {**data, "version": Receipt.version + 1}
+
     result = await db.execute(
-        update(Receipt)
-        .where(Receipt.id == receipt_id, Receipt.version == expected_version)
-        .values(**data, version=expected_version + 1)
-        .returning(Receipt.id)
+        stmt.values(**values).returning(Receipt.id)
     )
     updated_id = result.scalar_one_or_none()
     if not updated_id:

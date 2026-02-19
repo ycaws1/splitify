@@ -36,7 +36,24 @@ export async function apiFetch(path: string, options: RequestInit = {}) {
 
   if (!res.ok) {
     const error = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(error.detail || res.statusText);
+    let errorMessage = error.detail || res.statusText;
+
+    if (typeof errorMessage === 'object') {
+      try {
+        if (Array.isArray(errorMessage)) {
+          // Flatten Pydantic errors: "loc: msg"
+          errorMessage = errorMessage
+            .map((e: any) => `${e.loc?.[e.loc.length - 1] || 'field'}: ${e.msg || 'invalid'}`)
+            .join(' | ');
+        } else {
+          errorMessage = JSON.stringify(errorMessage);
+        }
+      } catch (e) {
+        errorMessage = "Unknown error occurred";
+      }
+    }
+
+    throw new Error(errorMessage);
   }
 
   if (res.status === 204) return null;

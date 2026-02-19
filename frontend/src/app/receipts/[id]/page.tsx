@@ -380,31 +380,31 @@ export default function ReceiptDetailPage() {
   </div>
 
   // Item editing handlers
-  const handleAddItem = async () => {
-    try {
-      const newItem = await apiFetch(`/api/receipts/${receiptId}/items`, {
-        method: "POST",
-        body: JSON.stringify({
-          description: "New Item",
-          amount: 0,
-          quantity: 1,
-        }),
-      });
+  const [modifiedItemIds, setModifiedItemIds] = useState<Set<string>>(new Set());
+  const [isSavingItems, setIsSavingItems] = useState(false);
 
-      setReceipt((prev) => {
-        if (!prev) return null;
-        return {
-          ...prev,
-          line_items: [...prev.line_items, newItem],
-        };
-      });
-    } catch (err) {
-      alert("Failed to add item");
-    }
+  const handleAddItem = async () => {
+    // Add temporary item to UI only
+    const tempId = `temp-${Date.now()}`;
+    const newItem = {
+      id: tempId,
+      description: "New Item",
+      amount: "0",
+      quantity: 1,
+      currency: receipt?.currency || "SGD",
+    };
+
+    setReceipt((prev) => {
+      if (!prev) return null;
+      return {
+        ...prev,
+        line_items: [...prev.line_items, newItem as any],
+      };
+    });
+    setModifiedItemIds(prev => new Set(prev).add(tempId));
   };
 
-  const handleUpdateItem = async (itemId: string, field: string, value: string) => {
-    // Optimistic update
+  const handleUpdateItem = (itemId: string, field: string, value: string) => {
     setReceipt((prev) => {
       if (!prev) return null;
       const updatedItems = prev.line_items.map((li) =>
@@ -412,22 +412,82 @@ export default function ReceiptDetailPage() {
       );
       return { ...prev, line_items: updatedItems };
     });
+    setModifiedItemIds(prev => new Set(prev).add(itemId));
+  };
 
+  const saveItems = async () => {
+    if (!receipt) return;
+    setIsSavingItems(true);
     try {
-      const payload: any = {};
-      if (field === "amount" || field === "quantity") {
-        payload[field] = parseFloat(value) || 0;
-      } else {
-        payload[field] = value;
-      }
+      const promises = Array.from(modifiedItemIds).map(async (id) => {
+        const item = receipt.line_items.find(li => li.id === id);
+        if (!item) return;
 
-      await apiFetch(`/api/items/${itemId}`, {
-        method: "PUT",
-        body: JSON.stringify(payload),
+        if (id.startsWith('temp-')) {
+          // Create new
+          await apiFetch(`/api/receipts/${receiptId}/items`, {
+            method: "POST",
+            body: JSON.stringify({
+              description: item.description,
+              amount: parseFloat(item.amount) || 0,
+              quantity: parseFloat(String(item.quantity)) || 1,
+            }),
+          });
+        } else {
+          // Update existing
+          await apiFetch(`/api/items/${id}`, {
+            method: "PUT",
+            body: JSON.stringify({
+              description: item.description,
+              amount: parseFloat(item.amount) || 0,
+              quantity: parseFloat(String(item.quantity)) || 1,
+            }),
+          });
+        }
       });
+
+      await Promise.all(promises);
+
+      // Calculate new totals from local state (which is already updated)
+      const newSubtotal = receipt.line_items.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
+      const tax = parseFloat(receipt.tax || "0");
+      const service = parseFloat(receipt.service_charge || "0");
+      const newTotal = newSubtotal + tax + service;
+
+      // Update receipt with new totals
+      // We purposefully omit version or send null to skip OCC check here, because
+      // we just modified items which might have triggered version bumps on the server
+      // and we want this total update to just "win".
+      await apiFetch(`/api/receipts/${receiptId}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          subtotal: newSubtotal,
+          total: newTotal,
+          version: null
+        }),
+      });
+
+      // Update local state with final values
+      setReceipt(prev => prev ? {
+        ...prev,
+        subtotal: newSubtotal.toFixed(2),
+        total: newTotal.toFixed(2)
+      } : null);
+
+      setModifiedItemIds(new Set());
+      setIsEditingItems(false);
+
+      // Refresh to replace any temp IDs with real server-assigned UUIDs
+      await fetchReceipt();
+
+      // Force refresh of group balances since totals changed
+      invalidateCache(`/api/groups/${receipt.group_id}?include=balances`);
+
     } catch (err) {
+      alert("Failed to save items");
       console.error(err);
-      fetchReceipt(); // Revert/Refresh on error
+    } finally {
+      setIsSavingItems(false);
     }
   };
 
@@ -497,25 +557,85 @@ export default function ReceiptDetailPage() {
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
+              {/* Tax Input */}
               <div>
-                <label className="block text-sm font-medium text-stone-700">Tax</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={headerForm.tax}
-                  onChange={(e) => setHeaderForm({ ...headerForm, tax: e.target.value })}
-                  className="block w-full rounded-lg border border-stone-300 px-3 py-2 font-mono text-sm focus:border-emerald-600 focus:outline-none"
-                />
+                <div className="flex justify-between">
+                  <label className="block text-sm font-medium text-stone-700">Tax</label>
+                  <button
+                    onClick={() => {
+                      // Toggle between raw amount and % logic if needed, 
+                      // but primarily user wants to INPUT as %.
+                      // Let's support inputting "10%" or just toggling a mode?
+                      // Simpler: Just like NewReceiptPage.
+                      // For now, let's keep it simple: Add a "%" mode toggle in local state?
+                      // We can use the Tax input for both if we detect % user wants?
+                      // Better: Add a toggle button like "Switch to %"
+                    }}
+                    className="text-xs text-emerald-600 hover:text-emerald-700"
+                  >
+                    {/* We'll implement a smarter input below */}
+                  </button>
+                </div>
+                <div className="relative">
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="Amount"
+                    value={headerForm.tax}
+                    onChange={(e) => setHeaderForm({ ...headerForm, tax: e.target.value })}
+                    className="block w-full rounded-lg border border-stone-300 px-3 py-2 font-mono text-sm focus:border-emerald-600 focus:outline-none"
+                  />
+                  {/* Helper to set tax by % of subtotal */}
+                  {receipt.subtotal && (
+                    <div className="mt-1 flex gap-2">
+                      <button
+                        onClick={() => {
+                          const sub = parseFloat(receipt.subtotal!);
+                          const rate = prompt("Enter Tax Rate (%)", "9");
+                          if (rate && !isNaN(parseFloat(rate))) {
+                            const val = (sub * parseFloat(rate) / 100).toFixed(2);
+                            setHeaderForm({ ...headerForm, tax: val });
+                          }
+                        }}
+                        className="text-[10px] bg-stone-100 px-2 py-0.5 rounded text-stone-600 hover:bg-stone-200"
+                      >
+                        Set %
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
+
+              {/* Service Charge Input */}
               <div>
                 <label className="block text-sm font-medium text-stone-700">Service Charge</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={headerForm.service_charge}
-                  onChange={(e) => setHeaderForm({ ...headerForm, service_charge: e.target.value })}
-                  className="block w-full rounded-lg border border-stone-300 px-3 py-2 font-mono text-sm focus:border-emerald-600 focus:outline-none"
-                />
+                <div className="relative">
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="Amount"
+                    value={headerForm.service_charge}
+                    onChange={(e) => setHeaderForm({ ...headerForm, service_charge: e.target.value })}
+                    className="block w-full rounded-lg border border-stone-300 px-3 py-2 font-mono text-sm focus:border-emerald-600 focus:outline-none"
+                  />
+                  {receipt.subtotal && (
+                    <div className="mt-1 flex gap-2">
+                      <button
+                        onClick={() => {
+                          const sub = parseFloat(receipt.subtotal!);
+                          const rate = prompt("Enter Service Charge Rate (%)", "10");
+                          if (rate && !isNaN(parseFloat(rate))) {
+                            const val = (sub * parseFloat(rate) / 100).toFixed(2);
+                            setHeaderForm({ ...headerForm, service_charge: val });
+                          }
+                        }}
+                        className="text-[10px] bg-stone-100 px-2 py-0.5 rounded text-stone-600 hover:bg-stone-200"
+                      >
+                        Set %
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
             <div className="flex justify-end gap-2 pt-2">
@@ -547,12 +667,34 @@ export default function ReceiptDetailPage() {
                   <p className="text-sm text-stone-500">{receipt.receipt_date}</p>
                 )}
               </div>
-              <button
-                onClick={startEditHeader}
-                className="text-sm font-medium text-emerald-700 hover:text-emerald-800"
-              >
-                Edit Details
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={async () => {
+                    if (!confirm("This will assign ALL items to ALL members evenly, replacing current assignments. Continue?")) return;
+                    try {
+                      // Optimistic assumption: it works, but hard to simulate complex UI update for everything locally.
+                      // So we'll just wait for the fast server response.
+                      const updatedAssignments = await apiFetch(`/api/receipts/${receiptId}/assignments/assign-all`, {
+                        method: "POST"
+                      });
+                      setAssignments(updatedAssignments);
+                      fetchReceipt(); // Refresh full state including version
+                      invalidateCache(`/api/groups/${receipt.group_id}?include=balances`);
+                    } catch (err) {
+                      alert("Failed to assign all");
+                    }
+                  }}
+                  className="text-sm font-medium text-emerald-700 hover:text-emerald-800 border border-emerald-200 rounded-lg px-3 py-1.5 hover:bg-emerald-50 transition-colors"
+                >
+                  Split All Evenly
+                </button>
+                <button
+                  onClick={startEditHeader}
+                  className="text-sm font-medium text-stone-600 hover:text-stone-900 border border-stone-200 rounded-lg px-3 py-1.5 hover:bg-stone-50 transition-colors"
+                >
+                  Edit Details
+                </button>
+              </div>
             </div>
             <div className="mt-2 flex flex-wrap gap-3 text-sm text-stone-600">
               {receipt.subtotal && <span>Subtotal: <span className="font-mono">{getCurrencySymbol(receipt.currency)}{receipt.subtotal}</span></span>}
@@ -560,6 +702,63 @@ export default function ReceiptDetailPage() {
               {receipt.service_charge && <span>Service: <span className="font-mono">{getCurrencySymbol(receipt.currency)}{receipt.service_charge}</span></span>}
               {receipt.total && <span className="font-semibold">Total: <span className="font-mono">{getCurrencySymbol(receipt.currency)}{receipt.total}</span></span>}
             </div>
+
+            {(() => {
+              const sumItems = receipt.line_items.reduce((s, li) => s + (parseFloat(li.amount) || 0), 0);
+              const tax = parseFloat(receipt.tax || "0");
+              const svc = parseFloat(receipt.service_charge || "0");
+              const calculatedTotal = sumItems + tax + svc;
+              const currentTotal = parseFloat(receipt.total || "0");
+
+              if (Math.abs(calculatedTotal - currentTotal) > 0.05) {
+                return (
+                  <div className="mt-3 rounded-lg bg-amber-50 border border-amber-200 p-3 flex items-start gap-3">
+                    <div className="text-amber-600 mt-0.5">⚠️</div>
+                    <div className="flex-1 text-sm text-amber-800">
+                      <p className="font-medium">Total mismatch</p>
+                      <p className="mt-1">
+                        Receipt total is <strong>{getCurrencySymbol(receipt.currency)}{currentTotal.toFixed(2)}</strong> but items + tax + service sums to <strong>{getCurrencySymbol(receipt.currency)}{calculatedTotal.toFixed(2)}</strong>.
+                      </p>
+                      <button
+                        onClick={async () => {
+                          if (!confirm(`Update receipt total to ${getCurrencySymbol(receipt.currency)}${calculatedTotal.toFixed(2)}?`)) return;
+
+                          // Optimistic update
+                          const prevReceipt = { ...receipt };
+                          setReceipt({
+                            ...receipt,
+                            subtotal: sumItems.toFixed(2),
+                            total: calculatedTotal.toFixed(2)
+                          });
+
+                          try {
+                            const updated = await apiFetch(`/api/receipts/${receiptId}`, {
+                              method: "PUT",
+                              body: JSON.stringify({
+                                subtotal: sumItems,
+                                total: calculatedTotal,
+                                version: receipt.version
+                              }),
+                            });
+                            // Update with server response just in case
+                            setReceipt(prev => prev ? { ...prev, ...updated } : null);
+                            if (receipt) invalidateCache(`/api/groups/${receipt.group_id}?include=balances`);
+                          } catch (err) {
+                            alert("Failed to update total");
+                            setReceipt(prevReceipt); // Rollback
+                          }
+                        }}
+                        className="mt-2 rounded bg-white px-3 py-1 text-xs font-semibold text-amber-700 shadow-sm border border-amber-200 hover:bg-amber-50"
+                      >
+                        Fix Total to Match Items
+                      </button>
+                    </div>
+                  </div>
+                );
+              }
+              return null;
+            })()}
+
             {group && receipt.currency !== group.base_currency && (
               <div className="mt-1 text-xs text-stone-400 space-y-0.5">
                 <p>Exchange rate: 1 {receipt.currency} = {receipt.exchange_rate} {group.base_currency}</p>
@@ -637,12 +836,14 @@ export default function ReceiptDetailPage() {
                 <span className="text-xs text-stone-500 font-mono">
                   Assigned: {getCurrencySymbol(receipt.currency)}{totalAssigned.toFixed(2)} / {getCurrencySymbol(receipt.currency)}{receipt.line_items.reduce((s, li) => s + parseFloat(li.amount), 0).toFixed(2)}
                 </span>
-                <button
-                  onClick={() => setIsEditingItems(!isEditingItems)}
-                  className="ml-2 text-sm font-medium text-emerald-700 hover:text-emerald-800"
-                >
-                  {isEditingItems ? "Done" : (hasItems ? "Edit" : "Add Items")}
-                </button>
+                {!isEditingItems && (
+                  <button
+                    onClick={() => setIsEditingItems(true)}
+                    className="ml-2 text-sm font-medium text-emerald-700 hover:text-emerald-800"
+                  >
+                    {hasItems ? "Edit Items" : "Add Items"}
+                  </button>
+                )}
               </div>
             </div>
 
@@ -712,8 +913,8 @@ export default function ReceiptDetailPage() {
                       <button
                         onClick={() => handleAssignAll(li.id)}
                         className={`rounded-full px-3 py-1 text-xs font-bold transition-colors ${members.every(m => isAssigned(li.id, m.user_id))
-                            ? "bg-emerald-700 text-white"
-                            : "bg-white border border-stone-300 text-stone-600 hover:bg-stone-100"
+                          ? "bg-emerald-700 text-white"
+                          : "bg-white border border-stone-300 text-stone-600 hover:bg-stone-100"
                           }`}
                         title={members.every(m => isAssigned(li.id, m.user_id)) ? "Unselect All" : "Select All"}
                       >
@@ -737,12 +938,36 @@ export default function ReceiptDetailPage() {
               })}
 
               {isEditingItems && (
-                <button
-                  onClick={handleAddItem}
-                  className="w-full rounded-xl border-2 border-dashed border-emerald-300 py-3 text-sm font-medium text-emerald-600 hover:bg-emerald-50 transition-colors"
-                >
-                  + Add New Item
-                </button>
+                <div className="space-y-3 pt-2">
+                  <button
+                    onClick={handleAddItem}
+                    className="w-full rounded-xl border-2 border-dashed border-stone-300 py-3 text-sm font-medium text-stone-600 hover:bg-stone-50 transition-colors"
+                  >
+                    + Add New Item
+                  </button>
+
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        setIsEditingItems(false);
+                        setModifiedItemIds(new Set());
+                        fetchReceipt(); // discard changes
+                      }}
+                      disabled={isSavingItems}
+                      className="flex-1 rounded-xl bg-stone-100 py-3 text-sm font-medium text-stone-600 hover:bg-stone-200"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={saveItems}
+                      disabled={isSavingItems || modifiedItemIds.size === 0}
+                      className="flex-1 rounded-xl bg-emerald-700 py-3 text-sm font-medium text-white hover:bg-emerald-800 disabled:opacity-50 flex justify-center items-center gap-2"
+                    >
+                      {isSavingItems && <div className="h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent" />}
+                      Save Changes
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
           </section>

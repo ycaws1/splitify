@@ -90,7 +90,7 @@ class ReceiptUpdate(BaseModel):
     tax: Decimal | None = None
     service_charge: Decimal | None = None
     total: Decimal | None = None
-    version: int  # required for optimistic locking
+    version: int | None = None  # if None, skip optimistic locking
 
 
 class ReceiptListResponse(BaseModel):

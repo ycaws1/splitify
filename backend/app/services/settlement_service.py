@@ -17,42 +17,62 @@ async def calculate_balances(
 ) -> dict:
     """
     Calculate net balances for a group.
+    Tax and service charge are stored as line items with assignments (same as regular items),
+    so no separate distribution is needed — all charges flow through LineItemAssignment.
     Pass user_names to skip the user lookup query (saves a DB round trip).
     """
-    assignments_result = await db.execute(
-        select(LineItemAssignment.user_id, LineItemAssignment.share_amount, Receipt.exchange_rate)
-        .join(LineItem, LineItem.id == LineItemAssignment.line_item_id)
-        .join(Receipt, Receipt.id == LineItem.receipt_id)
-        .where(Receipt.group_id == group_id)
-    )
-    payments_result = await db.execute(
-        select(Payment.paid_by, Payment.amount, Receipt.exchange_rate)
-        .join(Receipt, Receipt.id == Payment.receipt_id)
-        .where(Receipt.group_id == group_id)
-    )
+    # Fetch receipts-related totals from shared service (since=None for all time)
+    from app.services.calculation_service import get_receipt_totals
+    spending, paid, user_names_map = await get_receipt_totals(db, group_id, since=None)
+    
+    # Update local map if provided, otherwise rely on service return (but service return is partial)
+    if user_names is None:
+        user_names = {}
+    # Merge service found names into user_names
+    for uid, name in user_names_map.items():
+        if uid not in user_names:
+            user_names[uid] = name
+
     settlements_result = await db.execute(
         select(Settlement.from_user, Settlement.to_user, Settlement.amount)
         .where(
             Settlement.group_id == group_id,
             Settlement.is_settled == True,
         )
+        .distinct()
     )
 
-    assignments = assignments_result.all()
-    payments = payments_result.all()
     settlements = settlements_result.all()
 
-    if not assignments and not payments:
+    if not spending and not paid:
         return {"balances": [], "total_assigned": Decimal("0"), "total_paid": Decimal("0")}
 
-    total_assigned = sum((share * rate for _, share, rate in assignments), Decimal("0"))
-    total_paid = sum((amt * rate for _, amt, rate in payments), Decimal("0"))
-
     net = defaultdict(Decimal)
-    for user_id, share_amount, rate in assignments:
-        net[user_id] += share_amount * rate
-    for paid_by, amount, rate in payments:
-        net[paid_by] -= amount * rate
+
+    # 1. Assignments (spending) -> User owes money (negative net)
+    # Wait, original logic: 
+    # net[user_id] += share_amount * rate
+    # debtors = positive net?
+    # Let's check original logic lines 74-78:
+    # if amount > 0: debtors.append...
+    # So POSITIVE net means you are a DEBTOR (you OWE money)?
+    # Let's re-read original lines 57-58:
+    # for ... assignments: net[user_id] += share
+    # So if I spent 50, my net is +50.
+    # If I PAID 50 (lines 64-65): net[paid_by] -= amount
+    # So if I spent 50 and paid 0, net is +50. I am a DEBTOR. Correct.
+    # If I spent 0 and paid 50, net is -50. I am a CREDITOR. Correct.
+    
+    for user_id, amount in spending.items():
+        net[user_id] += amount
+        
+    for user_id, amount in paid.items():
+        net[user_id] -= amount
+        
+    total_assigned = sum(spending.values())
+    total_paid = sum(paid.values())
+
+    # 3. Settled amounts
     for from_user, to_user, amount in settlements:
         net[from_user] -= amount
         net[to_user] += amount

@@ -65,7 +65,7 @@ async def get_group_financials(
     for user_id, share, rate, name in assignments_result.all():
         effective_rate = rate if rate is not None else Decimal("1")
         financials[user_id]["spent"] += share * effective_rate
-        if name:
+        if name and not financials[user_id]["display_name"]:
             financials[user_id]["display_name"] = name
 
     for user_id, amount, rate, name in payments_result.all():

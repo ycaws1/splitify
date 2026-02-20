@@ -34,15 +34,17 @@ async def test_simple_debt_resolution():
 
 @pytest.mark.asyncio
 async def test_settlement_reduces_debt():
-    """If settlement already completed (in net_balance), no balances remain."""
+    """Completed settlement (reflected in net_balance) produces no remaining transfer."""
     db = AsyncMock()
     financials = {
-        ALICE: {"spent": Decimal("0"), "paid": Decimal("0"),
-                "settled_out": Decimal("0"), "settled_in": Decimal("0"),
-                "net_balance": Decimal("0"), "display_name": "Alice"},
-        BOB:   {"spent": Decimal("0"), "paid": Decimal("0"),
-                "settled_out": Decimal("0"), "settled_in": Decimal("0"),
-                "net_balance": Decimal("0"), "display_name": "Bob"},
+        ALICE: {"spent": Decimal("100"), "paid": Decimal("0"),
+                "settled_out": Decimal("100"), "settled_in": Decimal("0"),
+                "net_balance": Decimal("0"),   # 0 - 100 + 100 - 0 = 0
+                "display_name": "Alice"},
+        BOB:   {"spent": Decimal("0"), "paid": Decimal("100"),
+                "settled_out": Decimal("0"), "settled_in": Decimal("100"),
+                "net_balance": Decimal("0"),   # 100 - 0 + 0 - 100 = 0
+                "display_name": "Bob"},
     }
     with patch("app.services.settlement_service.get_group_financials", return_value=financials):
         result = await calculate_balances(db, GROUP_ID)

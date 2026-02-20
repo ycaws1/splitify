@@ -44,8 +44,7 @@ async def get(
         group = await get_group(db, group_id)
         if not group:
             raise HTTPException(status_code=404, detail="Group not found")
-        members_map = {m.user_id: m.display_name for m in group.members}
-        bal = await calculate_balances(db, group_id, user_names=members_map)
+        bal = await calculate_balances(db, group_id)
         return GroupDetailResponse.model_validate(
             group, from_attributes=True
         ).model_copy(update={

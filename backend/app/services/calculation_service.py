@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.receipt import Receipt, LineItem, LineItemAssignment
-from app.models.payment import Payment
+from app.models.payment import Payment, Settlement
 from app.models.user import User
 
 async def get_receipt_totals(
@@ -68,20 +68,20 @@ async def get_receipt_totals(
 
     # Process Spending
     for user_id, share, rate, name in assignments:
-        spending[user_id] += share * rate
+        effective_rate = rate if rate is not None else Decimal("1")
+        spending[user_id] += share * effective_rate
         if name:
             user_names[user_id] = name
 
     # Process Payments
     for user_id, amount, rate, name in payments_data:
-        paid[user_id] += amount * rate
+        effective_rate = rate if rate is not None else Decimal("1")
+        paid[user_id] += amount * effective_rate
         if name and user_id not in user_names:
             user_names[user_id] = name
 
     return spending, paid, user_names
 
-
-from app.models.payment import Settlement as _Settlement  # avoid re-import clash
 
 async def get_group_financials(
     db: AsyncSession,
@@ -120,10 +120,10 @@ async def get_group_financials(
     )
 
     settlements_result = await db.execute(
-        select(_Settlement.from_user, _Settlement.to_user, _Settlement.amount)
+        select(Settlement.from_user, Settlement.to_user, Settlement.amount)
         .where(
-            _Settlement.group_id == group_id,
-            _Settlement.is_settled == True,
+            Settlement.group_id == group_id,
+            Settlement.is_settled == True,
         )
     )
 
@@ -136,15 +136,18 @@ async def get_group_financials(
     })
 
     for user_id, share, rate, name in assignments_result.all():
-        financials[user_id]["spent"] += share * rate
+        effective_rate = rate if rate is not None else Decimal("1")
+        financials[user_id]["spent"] += share * effective_rate
         if name:
             financials[user_id]["display_name"] = name
 
     for user_id, amount, rate, name in payments_result.all():
-        financials[user_id]["paid"] += amount * rate
+        effective_rate = rate if rate is not None else Decimal("1")
+        financials[user_id]["paid"] += amount * effective_rate
         if name and not financials[user_id]["display_name"]:
             financials[user_id]["display_name"] = name
 
+    # Settlements are recorded in the group's base currency directly — no exchange rate needed.
     for from_user, to_user, amount in settlements_result.all():
         financials[from_user]["settled_out"] += amount
         financials[to_user]["settled_in"] += amount

@@ -388,7 +388,7 @@ export default function ReceiptDetailPage() {
     if (!headerForm || !receipt) return;
     setIsSavingHeader(true);
     try {
-      await apiFetch(`/api/receipts/${receiptId}`, {
+      const updatedReceipt = await apiFetch(`/api/receipts/${receiptId}`, {
         method: "PUT",
         body: JSON.stringify({
           merchant_name: headerForm.merchant_name,
@@ -399,8 +399,10 @@ export default function ReceiptDetailPage() {
           version: receipt.version,
         }),
       });
+      if (updatedReceipt) {
+        setReceipt(updatedReceipt);
+      }
       setIsEditingHeader(false);
-      fetchReceipt();
     } catch (err) {
       alert(err instanceof Error ? err.message : "Failed to update receipt details");
     } finally {
@@ -474,60 +476,31 @@ export default function ReceiptDetailPage() {
       const service = parseFloat(receipt.service_charge || "0");
       const newTotal = newSubtotal + tax + service;
 
-      const itemPromises = Array.from(modifiedItemIds).map(async (id) => {
-        const item = receipt.line_items.find(li => li.id === id);
-        if (!item) return;
+      // Send all items and new totals in a single bulk request
+      const itemsPayload = receipt.line_items.map(item => ({
+        id: item.id,
+        description: item.description,
+        amount: parseFloat(item.amount) || 0,
+        quantity: parseFloat(String(item.quantity)) || 1,
+      }));
 
-        if (id.startsWith('temp-')) {
-          // Create new
-          await apiFetch(`/api/receipts/${receiptId}/items`, {
-            method: "POST",
-            body: JSON.stringify({
-              description: item.description,
-              amount: parseFloat(item.amount) || 0,
-              quantity: parseFloat(String(item.quantity)) || 1,
-            }),
-          });
-        } else {
-          // Update existing
-          await apiFetch(`/api/items/${id}`, {
-            method: "PUT",
-            body: JSON.stringify({
-              description: item.description,
-              amount: parseFloat(item.amount) || 0,
-              quantity: parseFloat(String(item.quantity)) || 1,
-            }),
-          });
-        }
-      });
-
-      // Await all item saves sequentially to prevent concurrent updates to the same receipt version in DB
-      for (const promise of itemPromises) {
-        await promise;
-      }
-
-      // Then update receipt totals
-      await apiFetch(`/api/receipts/${receiptId}`, {
+      const updatedReceipt = await apiFetch(`/api/receipts/${receiptId}/items/bulk`, {
         method: "PUT",
         body: JSON.stringify({
+          items: itemsPayload,
           subtotal: newSubtotal,
           total: newTotal,
           version: null,
         }),
       });
 
-      // Update local state with final values
-      setReceipt(prev => prev ? {
-        ...prev,
-        subtotal: newSubtotal.toFixed(2),
-        total: newTotal.toFixed(2)
-      } : null);
+      // Update local state with the fully refreshed receipt from the server
+      if (updatedReceipt) {
+        setReceipt(updatedReceipt);
+      }
 
       setModifiedItemIds(new Set());
       setIsEditingItems(false);
-
-      // Fire-and-forget: replace temp IDs with real server UUIDs in background
-      fetchReceipt();
 
       // Force refresh of group balances since totals changed
       invalidateCache(`/api/groups/${receipt.group_id}`);

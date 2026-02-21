@@ -257,15 +257,26 @@ async def delete_all_receipts(db: AsyncSession, group_id: uuid.UUID) -> int:
 
 
 async def delete_receipt(db: AsyncSession, receipt_id: uuid.UUID) -> bool:
-    result = await db.execute(
-        select(Receipt)
-        .options(selectinload(Receipt.payments))
-        .where(Receipt.id == receipt_id)
-    )
-    receipt = result.scalar_one_or_none()
-    if not receipt:
+    from sqlalchemy import select, delete
+    from app.models.receipt import Receipt, LineItem, LineItemAssignment
+    from app.models.payment import Payment
+
+    # 1. Gather line item IDs for this receipt
+    li_result = await db.execute(select(LineItem.id).where(LineItem.receipt_id == receipt_id))
+    line_item_ids = list(li_result.scalars().all())
+
+    # 2. Bulk delete bottom-up to maintain foreign key integrity
+    if line_item_ids:
+        await db.execute(delete(LineItemAssignment).where(LineItemAssignment.line_item_id.in_(line_item_ids)))
+        await db.execute(delete(LineItem).where(LineItem.receipt_id == receipt_id))
+
+    await db.execute(delete(Payment).where(Payment.receipt_id == receipt_id))
+    
+    # 3. Delete receipt and check if it existed
+    result = await db.execute(delete(Receipt).where(Receipt.id == receipt_id))
+    if result.rowcount == 0:
         return False
-    await db.delete(receipt)
+
     await db.commit()
     return True
 
@@ -365,3 +376,69 @@ async def delete_line_item(db: AsyncSession, item_id: uuid.UUID) -> bool:
     
     await db.commit()
     return True
+
+async def bulk_update_receipt_items(
+    db: AsyncSession, receipt_id: uuid.UUID, data: dict
+) -> Receipt | None:
+    from sqlalchemy import delete
+    from decimal import Decimal
+    
+    result = await db.execute(select(Receipt).options(*_receipt_load_options()).where(Receipt.id == receipt_id))
+    receipt = result.unique().scalar_one_or_none()
+    if not receipt:
+        return None
+
+    existing_items = {str(item.id): item for item in receipt.line_items}
+    incoming_items = data.get("items", [])
+    incoming_ids = {str(item["id"]) for item in incoming_items if not str(item["id"]).startswith("temp-")}
+
+    # Delete items missing from incoming
+    items_to_delete = [uuid.UUID(item_id) for item_id in existing_items if item_id not in incoming_ids]
+    if items_to_delete:
+        await db.execute(delete(LineItemAssignment).where(LineItemAssignment.line_item_id.in_(items_to_delete)))
+        await db.execute(delete(LineItem).where(LineItem.id.in_(items_to_delete)))
+
+    # Process updates and creates
+    max_sort = max([item.sort_order for item in receipt.line_items] + [0])
+    
+    for incoming in incoming_items:
+        incoming_id = str(incoming["id"])
+        qty = Decimal(str(incoming["quantity"]))
+        amt = Decimal(str(incoming["amount"]))
+        unit_price = amt / qty if qty else amt
+
+        if incoming_id.startswith("temp-"):
+            max_sort += 1
+            new_item = LineItem(
+                receipt_id=receipt_id,
+                description=incoming["description"],
+                quantity=qty,
+                amount=amt,
+                unit_price=unit_price,
+                sort_order=max_sort
+            )
+            db.add(new_item)
+        else:
+            existing = existing_items.get(incoming_id)
+            if existing:
+                existing.description = incoming["description"]
+                existing.quantity = qty
+                existing.amount = amt
+                existing.unit_price = unit_price
+
+    # Update receipt totals and version
+    receipt_updates = {"version": Receipt.version + 1}
+    for field in ["subtotal", "tax", "service_charge", "total"]:
+        if field in data and data[field] is not None:
+            receipt_updates[field] = Decimal(str(data[field]))
+        elif field in data:
+            receipt_updates[field] = None
+            
+    await db.execute(
+        update(Receipt)
+        .where(Receipt.id == receipt_id)
+        .values(**receipt_updates)
+    )
+
+    await db.commit()
+    return await get_receipt(db, receipt_id)

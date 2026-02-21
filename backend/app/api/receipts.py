@@ -9,11 +9,11 @@ from app.core.database import get_db
 from app.models.user import User
 from app.schemas.receipt import (
     ReceiptCreate, ManualReceiptCreate, ReceiptResponse, ReceiptDetailResponse, ReceiptUpdate, ReceiptListResponse,
-    LineItemCreate, LineItemUpdate, LineItemResponse,
+    LineItemCreate, LineItemUpdate, LineItemResponse, BulkReceiptItemsUpdateRequest
 )
 from app.services.receipt_service import (
     create_receipt, create_manual_receipt, list_receipts, get_receipt, update_receipt, delete_receipt, delete_all_receipts,
-    add_line_item, update_line_item, delete_line_item,
+    add_line_item, update_line_item, delete_line_item, bulk_update_receipt_items
 )
 
 from app.services.exchange_rate_service import get_exchange_rate
@@ -208,6 +208,21 @@ async def create_item(
     if not item:
         raise HTTPException(status_code=404, detail="Receipt not found")
     return item
+
+
+@router.put("/api/receipts/{receipt_id}/items/bulk", response_model=ReceiptDetailResponse)
+async def bulk_update_items(
+    receipt_id: uuid.UUID,
+    body: BulkReceiptItemsUpdateRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    updated_receipt = await bulk_update_receipt_items(db, receipt_id, body.model_dump(exclude_unset=True))
+    if not updated_receipt:
+        raise HTTPException(status_code=404, detail="Receipt not found")
+    
+    result = ReceiptDetailResponse.model_validate(updated_receipt, from_attributes=True)
+    return result
 
 
 @router.put("/api/items/{item_id}", response_model=LineItemResponse)

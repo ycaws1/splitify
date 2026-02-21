@@ -93,6 +93,22 @@ class ReceiptUpdate(BaseModel):
     version: int | None = None  # if None, skip optimistic locking
 
 
+class BulkItemUpdateItem(BaseModel):
+    id: str | uuid.UUID  # 'temp-xxx' for new, or valid UUID for existing
+    description: str
+    amount: Decimal
+    quantity: Decimal
+
+
+class BulkReceiptItemsUpdateRequest(BaseModel):
+    items: list[BulkItemUpdateItem]
+    subtotal: Decimal | None = None
+    tax: Decimal | None = None
+    service_charge: Decimal | None = None
+    total: Decimal | None = None
+
+
+
 class ReceiptListResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: uuid.UUID

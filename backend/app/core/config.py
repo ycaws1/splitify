@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
+from pydantic import Field, AliasChoices
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
@@ -9,11 +9,11 @@ class Settings(BaseSettings):
     supabase_jwt_secret: str = ""
     database_url: str
     direct_database_url: str = ""
-    google_api_key: str
+    llm_api_key: str = Field(validation_alias=AliasChoices('llm_api_key', 'google_api_key', 'gemini_api_key'))
     vapid_private_key: str
     vapid_public_key: str
     vapid_claims_email: str
-    google_model_name: str = "gemini-2.5-flash-lite"
+    llm_model_name: str = Field(default="gemini/gemini-2.5-flash-lite", validation_alias=AliasChoices('llm_model_name', 'google_model_name'))
     cors_origins: str = "http://localhost:3000"
 
 

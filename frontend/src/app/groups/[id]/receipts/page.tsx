@@ -129,7 +129,7 @@ export default function ReceiptListPage() {
 
     try {
       await apiFetch(`/api/receipts/${receiptId}`, { method: "DELETE" });
-      invalidateCache(`/api/groups/${groupId}?include=balances`);
+      invalidateCache(`/api/groups/${groupId}`);
     } catch (error) {
       console.error("Failed to delete receipt:", error);
       alert("Failed to delete receipt");

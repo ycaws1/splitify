@@ -7,7 +7,7 @@ pydantic==2.10.4
 pydantic-settings==2.7.1
 python-multipart==0.0.20
 httpx==0.28.1
-google-generativeai==0.8.3
+litellm
 pywebpush==2.0.1
 py-vapid==1.9.2
 PyJWT[crypto]==2.10.1

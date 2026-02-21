@@ -3,20 +3,21 @@ import os
 import sys
 import json
 import time # Import time for measuring duration
-import google.generativeai as genai
+import base64
+from litellm import completion
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
 load_dotenv()
 
 # Configuration
-API_KEY = os.getenv("GOOGLE_API_KEY")
+API_KEY = os.getenv("LLM_API_KEY") or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
 if not API_KEY:
-    print("Error: GOOGLE_API_KEY not found in .env file.")
+    print("Error: LLM_API_KEY not found in .env file.")
     sys.exit(1)
 
 # Use the same model as the app
-MODEL_NAME = 'gemini-2.0-flash-lite'
+MODEL_NAME = 'gemini/gemini-2.5-flash-lite'
 
 EXTRACTION_PROMPT = """Analyze this receipt/invoice image. Extract all information into this exact JSON structure:
 
@@ -71,31 +72,41 @@ def process_image(image_path):
     elif image_path.lower().endswith(".webp"):
         mime_type = "image/webp"
     
-    # Configure Gemini
-    genai.configure(api_key=API_KEY)
-    model = genai.GenerativeModel(MODEL_NAME)
+    # Encode image to base64
+    b64_image = base64.b64encode(image_data).decode("utf-8")
+    data_url = f"data:{mime_type};base64,{b64_image}"
+
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": EXTRACTION_PROMPT},
+                {"type": "image_url", "image_url": {"url": data_url}}
+            ]
+        }
+    ]
     
     print(f"Sending request to {MODEL_NAME}...")
     start_time = time.time() # Start timer
     
     try:
-        response = model.generate_content([
-            {
-                "mime_type": mime_type,
-                "data": image_data
-            },
-            EXTRACTION_PROMPT
-        ])
+        response = completion(
+            model=MODEL_NAME,
+            messages=messages,
+            api_key=API_KEY
+        )
         
         end_time = time.time() # End timer
         duration = end_time - start_time
         
+        response_text = response.choices[0].message.content
+        
         print(f"\n--- Response Received in {duration:.2f} seconds ---") 
-        print(response.text)
+        print(response_text)
         print("\n--- Parsed JSON ---")
         
         # Clean markdown if present
-        raw_text = response.text
+        raw_text = response_text
         if "```json" in raw_text:
             raw_text = raw_text.split("```json")[1].split("```")[0].strip()
         elif "```" in raw_text:

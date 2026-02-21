@@ -44,7 +44,7 @@ export default function GroupDetailPage() {
         }),
       });
       // Refresh balances (invalidate cache first to ensure fresh data)
-      invalidateCache(`/api/groups/${groupId}?include=balances`);
+      invalidateCache(`/api/groups/${groupId}`);
       const updated = await apiFetch(`/api/groups/${groupId}/balances`);
       setBalances(updated.balances);
     } catch (err: unknown) {

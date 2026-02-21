@@ -96,9 +96,8 @@ export default function NewReceiptPage() {
         body: JSON.stringify({ image_url: urlData.publicUrl, currency: uploadCurrency || undefined }),
       });
 
-      // Force refresh of receipts list
-      invalidateCache(`/api/groups/${groupId}/receipts`);
-      invalidateCache(`/api/groups/${groupId}?include=balances`);
+      // Force refresh of all group cached data
+      invalidateCache(`/api/groups/${groupId}`);
       router.push(`/groups/${groupId}/receipts`);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Upload failed");
@@ -148,9 +147,8 @@ export default function NewReceiptPage() {
         }),
       });
 
-      // Force refresh of receipts list
-      invalidateCache(`/api/groups/${groupId}/receipts`);
-      invalidateCache(`/api/groups/${groupId}?include=balances`);
+      // Force refresh of all group cached data
+      invalidateCache(`/api/groups/${groupId}`);
       router.push(`/receipts/${receipt.id}`);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to create receipt");

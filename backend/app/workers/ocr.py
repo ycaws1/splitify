@@ -3,7 +3,9 @@ import uuid
 import logging
 import base64
 
-import google.generativeai as genai
+import base64
+
+from litellm import acompletion
 import httpx
 from sqlalchemy import select
 
@@ -107,22 +109,34 @@ async def process_receipt_ocr(receipt_id: uuid.UUID, user_provided_currency: str
                 }
             ]
 
-            # Configure Gemini
-            genai.configure(api_key=settings.google_api_key)
-            model_name = settings.google_model_name
-            model = genai.GenerativeModel(model_name)
+            # Encode image to base64 for unified vision support
+            b64_image = base64.b64encode(image_data).decode("utf-8")
+            data_url = f"data:{mime_type};base64,{b64_image}"
+
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": EXTRACTION_PROMPT},
+                        {"type": "image_url", "image_url": {"url": data_url}}
+                    ]
+                }
+            ]
             
             ocr_start = time.time()
-            print(f"DEBUG: Starting OCR with model {model_name}...")
-            response = await model.generate_content_async([
-                image_parts[0],
-                EXTRACTION_PROMPT
-            ])
+            model_name = settings.llm_model_name
+            print(f"DEBUG: Starting OCR with LiteLLM model {model_name}...")
+            
+            response = await acompletion(
+                model=model_name,
+                messages=messages,
+                api_key=settings.llm_api_key
+            )
+            
             ocr_duration = time.time() - ocr_start
+            raw_text = response.choices[0].message.content
             
-            raw_text = response.text
-            
-            print(f"DEBUG: Received OCR response for receipt {receipt_id} in {ocr_duration:.2f}s. Total time: {time.time() - start_time:.2f}s")
+            print(f"DEBUG: Received OCR response for receipt {receipt_id} in {ocr_duration:.2f}s.")
             
             # Remove markdown code blocks if present
             if "```json" in raw_text:

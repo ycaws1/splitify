@@ -69,5 +69,23 @@ class TestCurrencyUtils(unittest.TestCase):
         shares2 = compute_shares(amount, users, seed=seed)
         self.assertEqual(shares1, shares2)
 
+    def test_compute_receipt_shares(self):
+        """Test receipt-level precise splitting."""
+        from app.utils.currency_utils import compute_receipt_shares
+        
+        # 3 users splitting 3 items of 10.01
+        # Each gets 3.33666... per item. Total exact = 10.01 per user.
+        items = [
+            {"amount": Decimal("10.01"), "user_ids": ["u1", "u2", "u3"]},
+            {"amount": Decimal("10.01"), "user_ids": ["u1", "u2", "u3"]},
+            {"amount": Decimal("10.01"), "user_ids": ["u1", "u2", "u3"]},
+        ]
+        
+        shares = compute_receipt_shares(items, seed="test")
+        self.assertEqual(shares["u1"], Decimal("10.01"))
+        self.assertEqual(shares["u2"], Decimal("10.01"))
+        self.assertEqual(shares["u3"], Decimal("10.01"))
+        self.assertEqual(sum(shares.values()), Decimal("30.03"))
+
 if __name__ == "__main__":
     unittest.main()

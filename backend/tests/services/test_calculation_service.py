@@ -6,14 +6,25 @@ import pytest
 from app.services.calculation_service import get_group_financials
 
 
+from collections import namedtuple
+
 def make_db(assignment_rows=None, payment_rows=None, settlement_rows=None):
     """Return a mock AsyncSession whose execute() returns preset rows."""
     db = AsyncMock()
     results = []
-    for rows in [assignment_rows or [], payment_rows or [], settlement_rows or []]:
+    
+    AssignRow = namedtuple('AssignRow', ['receipt_id', 'exchange_rate', 'line_item_id', 'amount', 'user_id', 'display_name'])
+    PayRow = namedtuple('PayRow', ['paid_by', 'amount', 'exchange_rate', 'display_name'])
+    SettleRow = namedtuple('SettleRow', ['from_user', 'to_user', 'amount'])
+    
+    for rows, RowType in zip(
+        [assignment_rows or [], payment_rows or [], settlement_rows or []],
+        [AssignRow, PayRow, SettleRow]
+    ):
         r = MagicMock()
-        r.all.return_value = rows
+        r.all.return_value = [RowType(*row) for row in rows]
         results.append(r)
+        
     db.execute.side_effect = results
     return db
 
@@ -27,7 +38,7 @@ BOB = uuid.uuid4()
 async def test_basic_spending_and_payment():
     """User who spent more than paid has negative net_balance."""
     db = make_db(
-        assignment_rows=[(ALICE, Decimal("100.00"), Decimal("1.0"), "Alice")],
+        assignment_rows=[(uuid.uuid4(), Decimal("1.0"), uuid.uuid4(), Decimal("100.00"), ALICE, "Alice")],
         payment_rows=[(ALICE, Decimal("50.00"), Decimal("1.0"), "Alice")],
     )
     result = await get_group_financials(db, GROUP_ID)
@@ -51,7 +62,7 @@ async def test_settlement_adjusts_balance():
     """Completed settlement reduces debtor debt and creditor credit."""
     # Alice owes Bob 100. Settlement: Alice pays Bob 100.
     db = make_db(
-        assignment_rows=[(ALICE, Decimal("100.00"), Decimal("1.0"), "Alice")],
+        assignment_rows=[(uuid.uuid4(), Decimal("1.0"), uuid.uuid4(), Decimal("100.00"), ALICE, "Alice")],
         payment_rows=[(BOB, Decimal("100.00"), Decimal("1.0"), "Bob")],
         settlement_rows=[(ALICE, BOB, Decimal("100.00"))],
     )
@@ -64,7 +75,7 @@ async def test_settlement_adjusts_balance():
 async def test_exchange_rate_applied():
     """share_amount and payment are multiplied by receipt exchange_rate."""
     db = make_db(
-        assignment_rows=[(ALICE, Decimal("50.00"), Decimal("1.3"), "Alice")],
+        assignment_rows=[(uuid.uuid4(), Decimal("1.3"), uuid.uuid4(), Decimal("50.00"), ALICE, "Alice")],
         payment_rows=[(ALICE, Decimal("50.00"), Decimal("1.3"), "Alice")],
     )
     result = await get_group_financials(db, GROUP_ID)
@@ -76,7 +87,7 @@ async def test_exchange_rate_applied():
 @pytest.mark.asyncio
 async def test_display_name_captured():
     db = make_db(
-        assignment_rows=[(ALICE, Decimal("10.00"), Decimal("1.0"), "Alice")],
+        assignment_rows=[(uuid.uuid4(), Decimal("1.0"), uuid.uuid4(), Decimal("10.00"), ALICE, "Alice")],
     )
     result = await get_group_financials(db, GROUP_ID)
     assert result[ALICE]["display_name"] == "Alice"

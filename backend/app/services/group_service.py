@@ -72,7 +72,17 @@ async def delete_group(db: AsyncSession, group_id: uuid.UUID, user_id: uuid.UUID
     if not group:
         raise ValueError("Group not found")
 
-    await db.delete(group)
+    from app.services.receipt_service import delete_all_receipts
+    from app.services.payment_service import clear_group_settlements
+    from sqlalchemy import delete
+
+    # Cascade clear heavy components
+    await delete_all_receipts(db, group_id)
+    await clear_group_settlements(db, group_id)
+
+    # Bulk delete members then group to avoid ORM N+1 deletion loops
+    await db.execute(delete(GroupMember).where(GroupMember.group_id == group_id))
+    await db.execute(delete(Group).where(Group.id == group_id))
     await db.commit()
 
 

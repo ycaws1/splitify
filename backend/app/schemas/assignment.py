@@ -10,7 +10,7 @@ class AssignmentItem(BaseModel):
 
 class BulkAssignRequest(BaseModel):
     assignments: list[AssignmentItem]
-    version: int  # receipt version for optimistic locking
+    version: int | None = None  # optional, if not provided, skip strict check
 
 
 class ToggleAssignmentRequest(BaseModel):

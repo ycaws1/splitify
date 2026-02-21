@@ -30,6 +30,7 @@ export default function ReceiptListPage() {
   const {
     data: receiptsData,
     loading: receiptsLoading,
+    isValidating,
     refetch: refetchReceipts,
     setData: setReceiptsData
   } = useCachedFetch<any>(`/api/groups/${groupId}/receipts`);
@@ -156,7 +157,12 @@ export default function ReceiptListPage() {
   return (
     <div className="mx-auto max-w-2xl px-4 py-6">
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-stone-900">Receipts</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-2xl font-bold text-stone-900">Receipts</h1>
+          {isValidating && (
+            <div className="h-4 w-4 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent" title="Refreshing data..." />
+          )}
+        </div>
         <Link
           href={`/groups/${groupId}/receipts/new`}
           className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-800"

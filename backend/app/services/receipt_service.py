@@ -227,17 +227,33 @@ async def update_receipt(
 
 
 async def delete_all_receipts(db: AsyncSession, group_id: uuid.UUID) -> int:
-    """Delete all receipts in a group. Returns count deleted."""
-    result = await db.execute(
-        select(Receipt)
-        .options(selectinload(Receipt.payments))
-        .where(Receipt.group_id == group_id)
-    )
-    receipts = list(result.scalars().all())
-    for r in receipts:
-        await db.delete(r)
+    """Delete all receipts in a group using efficient bulk operations."""
+    from sqlalchemy import select, delete
+    from app.models.receipt import Receipt, LineItem, LineItemAssignment
+    from app.models.payment import Payment
+
+    # 1. Gather receipt IDs
+    result = await db.execute(select(Receipt.id).where(Receipt.group_id == group_id))
+    receipt_ids = list(result.scalars().all())
+
+    if not receipt_ids:
+        return 0
+
+    # 2. Gather line item IDs
+    li_result = await db.execute(select(LineItem.id).where(LineItem.receipt_id.in_(receipt_ids)))
+    line_item_ids = list(li_result.scalars().all())
+
+    # 3. Bulk delete bottom-up to maintain foreign key integrity
+    if line_item_ids:
+        await db.execute(delete(LineItemAssignment).where(LineItemAssignment.line_item_id.in_(line_item_ids)))
+        await db.execute(delete(LineItem).where(LineItem.receipt_id.in_(receipt_ids)))
+
+    if receipt_ids:
+        await db.execute(delete(Payment).where(Payment.receipt_id.in_(receipt_ids)))
+        await db.execute(delete(Receipt).where(Receipt.id.in_(receipt_ids)))
+
     await db.commit()
-    return len(receipts)
+    return len(receipt_ids)
 
 
 async def delete_receipt(db: AsyncSession, receipt_id: uuid.UUID) -> bool:

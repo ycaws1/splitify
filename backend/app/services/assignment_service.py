@@ -14,7 +14,7 @@ async def bulk_assign(
     db: AsyncSession,
     receipt_id: uuid.UUID,
     assignments: list[dict],
-    expected_version: int,
+    expected_version: int | None = None,
 ) -> list[LineItemAssignment] | None:
     """
     Replace all assignments for the given receipt.
@@ -24,12 +24,12 @@ async def bulk_assign(
     Returns None if version conflict.
     """
     # Version check
-    result = await db.execute(
-        update(Receipt)
-        .where(Receipt.id == receipt_id, Receipt.version == expected_version)
-        .values(version=expected_version + 1)
-        .returning(Receipt.id)
-    )
+    stmt = update(Receipt).where(Receipt.id == receipt_id)
+    if expected_version is not None:
+        stmt = stmt.where(Receipt.version == expected_version)
+    stmt = stmt.values(version=Receipt.version + 1).returning(Receipt.id)
+
+    result = await db.execute(stmt)
     if not result.scalar_one_or_none():
         return None  # version conflict
 
@@ -80,7 +80,7 @@ async def toggle_assignment(
     Toggle a single assignment on/off efficiently.
     Recalculates all shares after every change so they always sum exactly to
     the line item amount.
-    Returns dict with {assigned: bool, new_version: int} or None if version conflict.
+    Returns dict with {assigned: bool, new_version: int, assignments: list} or None if version conflict.
     """
     # Version check and increment
     stmt = update(Receipt).where(Receipt.id == receipt_id)
@@ -137,7 +137,13 @@ async def toggle_assignment(
         a.share_amount = shares[a.user_id]
 
     await db.commit()
-    return {"assigned": assigned, "new_version": new_ver}
+    
+    # Return the updated assignments for this line item so the frontend doesn't need to refetch
+    updated_assignments = [
+        {"id": a.id, "line_item_id": a.line_item_id, "user_id": a.user_id, "share_amount": a.share_amount}
+        for a in remaining
+    ]
+    return {"assigned": assigned, "new_version": new_ver, "assignments": updated_assignments}
 
 
 async def get_assignments(db: AsyncSession, receipt_id: uuid.UUID) -> list[LineItemAssignment]:

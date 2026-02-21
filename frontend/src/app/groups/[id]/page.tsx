@@ -66,7 +66,7 @@ export default function GroupDetailPage() {
     }
   };
 
-  const { data: groupData, loading: groupLoading } = useCachedFetch<Group & { balances: BalanceEntry[]; total_assigned: string; total_paid: string }>(`/api/groups/${groupId}?include=balances`);
+  const { data: groupData, loading: groupLoading, isValidating } = useCachedFetch<Group & { balances: BalanceEntry[]; total_assigned: string; total_paid: string }>(`/api/groups/${groupId}?include=balances`);
 
   // Removed local loading state logic in favor of using groupLoading directly
   useEffect(() => {
@@ -139,13 +139,18 @@ export default function GroupDetailPage() {
             </button>
           </form>
         ) : (
-          <h1
-            className="text-2xl font-bold text-stone-900 cursor-pointer hover:text-emerald-800 transition-colors"
-            onClick={() => { setEditName(group.name); setIsEditingName(true); }}
-            title="Click to rename"
-          >
-            {group.name}
-          </h1>
+          <div className="flex items-center gap-2">
+            <h1
+              className="text-2xl font-bold text-stone-900 cursor-pointer hover:text-emerald-800 transition-colors"
+              onClick={() => { setEditName(group.name); setIsEditingName(true); }}
+              title="Click to rename"
+            >
+              {group.name}
+            </h1>
+            {isValidating && (
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent" title="Refreshing data..." />
+            )}
+          </div>
         )}
         <Link
           href={`/groups/${groupId}/receipts`}

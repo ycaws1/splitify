@@ -54,6 +54,7 @@ async def toggle_user_assignment(
     db: AsyncSession = Depends(get_db),
 ):
     """Fast toggle endpoint for optimistic UI updates. Only modifies one assignment."""
+    print(f"DEBUG: toggle assignment receipt_id={receipt_id}, line_item_id={body.line_item_id}, user_id={body.user_id}, expected_version={body.version}")
     result = await toggle_assignment(
         db, receipt_id, body.line_item_id, body.user_id, body.version
     )

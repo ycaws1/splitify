@@ -196,9 +196,11 @@ export default function ReceiptDetailPage() {
       setReceipt((prev) => prev ? { ...prev, version: result.new_version } : null);
 
       // Refresh assignments from server to get correct share amounts
-      // (This is fast since we only fetch assignments, not the full receipt)
-      const updatedAssignments = await apiFetch(`/api/receipts/${receiptId}/assignments`);
-      setAssignments(applyOptimisticUpdates(updatedAssignments));
+      // Instead of another network hop, use the inline updated assignments for this line item
+      setAssignments((prev) => {
+        const others = prev.filter((a) => a.line_item_id !== lineItemId);
+        return applyOptimisticUpdates([...others, ...result.assignments]);
+      });
     } catch (err: unknown) {
       // ROLLBACK on error
       lastSeenVersion.current = previousReceipt.version || 0;
@@ -237,15 +239,40 @@ export default function ReceiptDetailPage() {
     const allAssigned = memberIds.every(id => assignedIds.includes(id));
     const targetAssigned = !allAssigned;
 
-    // Trigger toggles for those who don't match target state
-    const promises = [];
-    for (const m of members) {
-      const isAssigned = assignedIds.includes(m.user_id);
-      if (isAssigned !== targetAssigned) {
-        promises.push(toggleAssignment(lineItemId, m.user_id));
+    // Use the bulk assign route to update the entire line item in one request
+    try {
+      setLoadingAssignments((prev) => new Set(prev).add(lineItemId + ":all"));
+      const result = await apiFetch(`/api/receipts/${receiptId}/assignments`, {
+        method: "PUT",
+        body: JSON.stringify({
+          assignments: [
+            {
+              line_item_id: lineItemId,
+              user_ids: targetAssigned ? memberIds : [],
+            },
+          ],
+          version: null,
+        }),
+      });
+      setAssignments((prev) => {
+        const others = prev.filter((a) => a.line_item_id !== lineItemId);
+        return applyOptimisticUpdates([...others, ...result]);
+      });
+      if (result.length > 0) {
+        // Find which items got updated to bump version
+        // The bulk endpoint doesn't return new_version directly yet, so we refetch receipt next if needed
+        // but for now we'll just invalidate
       }
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Failed to assign all");
+    } finally {
+      setLoadingAssignments((prev) => {
+        const next = new Set(prev);
+        next.delete(lineItemId + ":all");
+        return next;
+      });
+      if (receipt) invalidateCache(`/api/groups/${receipt.group_id}`);
     }
-    await Promise.all(promises);
   };
 
   // Payment totals
@@ -474,18 +501,20 @@ export default function ReceiptDetailPage() {
         }
       });
 
-      // Run item saves and totals update in parallel
-      await Promise.all([
-        ...itemPromises,
-        apiFetch(`/api/receipts/${receiptId}`, {
-          method: "PUT",
-          body: JSON.stringify({
-            subtotal: newSubtotal,
-            total: newTotal,
-            version: null,
-          }),
+      // Await all item saves sequentially to prevent concurrent updates to the same receipt version in DB
+      for (const promise of itemPromises) {
+        await promise;
+      }
+
+      // Then update receipt totals
+      await apiFetch(`/api/receipts/${receiptId}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          subtotal: newSubtotal,
+          total: newTotal,
+          version: null,
         }),
-      ]);
+      });
 
       // Update local state with final values
       setReceipt(prev => prev ? {
@@ -949,11 +978,11 @@ export default function ReceiptDetailPage() {
                           className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold transition-colors ${members.every(m => isAssigned(li.id, m.user_id))
                             ? "bg-emerald-700 text-white"
                             : "bg-white border border-stone-300 text-stone-600 hover:bg-stone-100"
-                            } ${members.some(m => loadingAssignments.has(`${li.id}:${m.user_id}`)) ? "opacity-60 cursor-not-allowed" : ""}`}
-                          disabled={members.some(m => loadingAssignments.has(`${li.id}:${m.user_id}`))}
+                            } ${(members.some(m => loadingAssignments.has(`${li.id}:${m.user_id}`)) || loadingAssignments.has(`${li.id}:all`)) ? "opacity-60 cursor-not-allowed" : ""}`}
+                          disabled={(members.some(m => loadingAssignments.has(`${li.id}:${m.user_id}`)) || loadingAssignments.has(`${li.id}:all`))}
                           title={members.every(m => isAssigned(li.id, m.user_id)) ? "Unselect All" : "Select All"}
                         >
-                          {members.some(m => loadingAssignments.has(`${li.id}:${m.user_id}`)) && <div className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />}
+                          {loadingAssignments.has(`${li.id}:all`) && <div className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />}
                           All
                         </button>
                         {members.map((m) => {

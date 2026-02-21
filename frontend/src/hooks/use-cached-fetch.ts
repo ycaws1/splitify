@@ -61,6 +61,7 @@ export function useCachedFetch<T>(
   const [data, setData] = useState<T | null>(cached);
   const [loading, setLoading] = useState(!cached);
   const [error, setError] = useState<string | null>(null);
+  const [isValidating, setIsValidating] = useState(false);
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -71,6 +72,7 @@ export function useCachedFetch<T>(
   const refetch = useCallback(async (showLoading = false) => {
     if (!path) return;
     if (showLoading) setLoading(true);
+    setIsValidating(true);
     try {
       const raw = await apiFetch(path);
       const result = options?.transform ? options.transform(raw) : raw;
@@ -84,9 +86,12 @@ export function useCachedFetch<T>(
         setError(err instanceof Error ? err.message : "Fetch failed");
       }
     } finally {
-      if (mountedRef.current) setLoading(false);
+      if (mountedRef.current) {
+        setLoading(false);
+        setIsValidating(false);
+      }
     }
-  }, [path]);
+  }, [path, options]);
 
   // Initial fetch — always revalidate, but only show loading if no cache
   useEffect(() => {
@@ -94,5 +99,5 @@ export function useCachedFetch<T>(
     refetch();
   }, [path, refetch]);
 
-  return { data, loading, error, refetch, setData };
+  return { data, loading, error, refetch, setData, isValidating };
 }

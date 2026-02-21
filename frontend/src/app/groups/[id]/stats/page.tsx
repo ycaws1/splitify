@@ -20,13 +20,18 @@ interface Stats {
 export default function StatsPage() {
   const params = useParams();
   const groupId = params.id as string;
-  const { data: stats, loading } = useCachedFetch<Stats>(`/api/groups/${groupId}/stats`);
+  const { data: stats, loading, isValidating } = useCachedFetch<Stats>(`/api/groups/${groupId}/stats`);
 
   const currencySymbol = stats ? getCurrencySymbol(stats.base_currency) : "$";
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-6 space-y-6">
-      <h1 className="text-2xl font-bold text-stone-900">Statistics</h1>
+      <div className="flex items-center gap-2 mb-6">
+        <h1 className="text-2xl font-bold text-stone-900">Statistics</h1>
+        {isValidating && (
+          <div className="h-4 w-4 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent" title="Refreshing data..." />
+        )}
+      </div>
 
       {loading ? (
         <div className="space-y-3">
@@ -37,7 +42,7 @@ export default function StatsPage() {
       ) : stats ? (
         <div>
           {/* Summary cards */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-4 mb-6">
             <div className="rounded-xl border-l-4 border-l-emerald-600 bg-white p-4 text-center shadow-sm">
               <p className="text-sm text-stone-500">Total Spending</p>
               <p className="mt-1 text-2xl font-bold font-mono text-stone-900">
@@ -78,11 +83,10 @@ export default function StatsPage() {
                         </div>
                         <div>
                           <p className="text-stone-500 text-xs mb-1">Balance</p>
-                          <p className={`font-mono font-semibold ${
-                            isPositive ? "text-emerald-700" :
-                            isNegative ? "text-rose-600" :
-                            "text-stone-500"
-                          }`}>
+                          <p className={`font-mono font-semibold ${isPositive ? "text-emerald-700" :
+                              isNegative ? "text-rose-600" :
+                                "text-stone-500"
+                            }`}>
                             {isPositive && "+"}{currencySymbol}{Math.abs(balance).toFixed(2)}
                           </p>
                         </div>

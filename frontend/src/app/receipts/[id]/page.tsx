@@ -419,7 +419,13 @@ export default function ReceiptDetailPage() {
     if (!receipt) return;
     setIsSavingItems(true);
     try {
-      const promises = Array.from(modifiedItemIds).map(async (id) => {
+      // Calculate new totals upfront from local state
+      const newSubtotal = receipt.line_items.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
+      const tax = parseFloat(receipt.tax || "0");
+      const service = parseFloat(receipt.service_charge || "0");
+      const newTotal = newSubtotal + tax + service;
+
+      const itemPromises = Array.from(modifiedItemIds).map(async (id) => {
         const item = receipt.line_items.find(li => li.id === id);
         if (!item) return;
 
@@ -446,26 +452,18 @@ export default function ReceiptDetailPage() {
         }
       });
 
-      await Promise.all(promises);
-
-      // Calculate new totals from local state (which is already updated)
-      const newSubtotal = receipt.line_items.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
-      const tax = parseFloat(receipt.tax || "0");
-      const service = parseFloat(receipt.service_charge || "0");
-      const newTotal = newSubtotal + tax + service;
-
-      // Update receipt with new totals
-      // We purposefully omit version or send null to skip OCC check here, because
-      // we just modified items which might have triggered version bumps on the server
-      // and we want this total update to just "win".
-      await apiFetch(`/api/receipts/${receiptId}`, {
-        method: "PUT",
-        body: JSON.stringify({
-          subtotal: newSubtotal,
-          total: newTotal,
-          version: null
+      // Run item saves and totals update in parallel
+      await Promise.all([
+        ...itemPromises,
+        apiFetch(`/api/receipts/${receiptId}`, {
+          method: "PUT",
+          body: JSON.stringify({
+            subtotal: newSubtotal,
+            total: newTotal,
+            version: null,
+          }),
         }),
-      });
+      ]);
 
       // Update local state with final values
       setReceipt(prev => prev ? {
@@ -477,8 +475,8 @@ export default function ReceiptDetailPage() {
       setModifiedItemIds(new Set());
       setIsEditingItems(false);
 
-      // Refresh to replace any temp IDs with real server-assigned UUIDs
-      await fetchReceipt();
+      // Fire-and-forget: replace temp IDs with real server UUIDs in background
+      fetchReceipt();
 
       // Force refresh of group balances since totals changed
       invalidateCache(`/api/groups/${receipt.group_id}?include=balances`);
